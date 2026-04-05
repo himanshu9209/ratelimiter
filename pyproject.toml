@@ -1,0 +1,61 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "smart-ratelimiter"
+version = "0.1.0"
+description = "A flexible, pluggable API rate limiter with multiple algorithms and storage backends"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Himanshu", email = "hhpatel08@gmail.com" }]
+requires-python = ">=3.9"
+keywords = ["rate-limiting", "api", "throttling", "token-bucket", "sliding-window"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+dependencies = []
+
+[project.optional-dependencies]
+redis = ["redis>=4.0"]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-asyncio>=0.21",
+    "fakeredis>=2.0",
+    "black>=23.0",
+    "ruff>=0.1",
+    "mypy>=1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/himanshu9209/smart-ratelimiter"
+Documentation = "https://github.com/himanshu9209/smart-ratelimiter#readme"
+Repository = "https://github.com/himanshu9209/smart-ratelimiter"
+Issues = "https://github.com/himanshu9209/smart-ratelimiter/issues"
+Changelog = "https://github.com/himanshu9209/smart-ratelimiter/blob/main/CHANGELOG.md"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ratelimiter"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.mypy]
+strict = true
+python_version = "3.9"
