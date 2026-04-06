@@ -22,9 +22,11 @@ from .algorithms.base import BaseAlgorithm, RateLimitResult
 from .algorithms.fixed_window import FixedWindowRateLimiter
 from .algorithms.leaky_bucket import LeakyBucketRateLimiter
 from .algorithms.sliding_window import SlidingWindowRateLimiter
+from .algorithms.sliding_window_counter import SlidingWindowCounterRateLimiter
 from .algorithms.token_bucket import TokenBucketRateLimiter
 from .backends.memory import MemoryBackend
 from .backends.sqlite_backend import SQLiteBackend
+from .config import ConfigProvider, DynamicConfig
 from .decorators import RateLimitContext, rate_limit
 from .exceptions import (
     BackendConnectionError,
@@ -33,6 +35,15 @@ from .exceptions import (
     RateLimitError,
     RateLimitExceeded,
 )
+from .key_funcs import (
+    asgi_api_key_func,
+    asgi_composite_key_func,
+    asgi_ip_func,
+    wsgi_api_key_func,
+    wsgi_composite_key_func,
+    wsgi_ip_func,
+)
+from .metrics import InMemoryMetricsCollector, MetricsCollector, ObservableRateLimiter
 
 __all__ = [
     # Algorithms
@@ -40,6 +51,7 @@ __all__ = [
     "RateLimitResult",
     "FixedWindowRateLimiter",
     "SlidingWindowRateLimiter",
+    "SlidingWindowCounterRateLimiter",
     "TokenBucketRateLimiter",
     "LeakyBucketRateLimiter",
     "AdaptiveRateLimiter",
@@ -49,6 +61,20 @@ __all__ = [
     # Backends
     "MemoryBackend",
     "SQLiteBackend",
+    # Dynamic configuration
+    "ConfigProvider",
+    "DynamicConfig",
+    # Client identification
+    "wsgi_ip_func",
+    "wsgi_api_key_func",
+    "wsgi_composite_key_func",
+    "asgi_ip_func",
+    "asgi_api_key_func",
+    "asgi_composite_key_func",
+    # Observability
+    "MetricsCollector",
+    "InMemoryMetricsCollector",
+    "ObservableRateLimiter",
     # Decorators / context managers
     "rate_limit",
     "RateLimitContext",

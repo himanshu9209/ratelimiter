@@ -46,14 +46,16 @@ class LeakyBucketRateLimiter(BaseAlgorithm):
         window: float,
         leak_rate: Optional[float] = None,
         key_prefix: str = "",
+        config_provider=None,
     ) -> None:
-        super().__init__(backend, limit, window, key_prefix)
+        super().__init__(backend, limit, window, key_prefix, config_provider)
         self.leak_rate: float = leak_rate if leak_rate is not None else limit / window
 
     def _state_key(self, key: str) -> str:
         return f"{self._full_key(key)}:lb"
 
     def is_allowed(self, key: str, cost: int = 1) -> RateLimitResult:
+        self._refresh_config()
         now = time.time()
         state_key = self._state_key(key)
 

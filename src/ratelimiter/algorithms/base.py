@@ -6,9 +6,12 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from ..backends.base import BaseBackend
+
+if TYPE_CHECKING:
+    from ..config import ConfigProvider
 
 
 @dataclass(frozen=True)
@@ -64,6 +67,7 @@ class BaseAlgorithm(ABC):
         limit: int,
         window: float,
         key_prefix: str = "",
+        config_provider: Optional["ConfigProvider"] = None,
     ) -> None:
         if limit <= 0:
             raise ValueError("limit must be a positive integer")
@@ -74,9 +78,20 @@ class BaseAlgorithm(ABC):
         self.limit = limit
         self.window = window
         self.key_prefix = key_prefix
+        self._config_provider = config_provider
 
     def _full_key(self, key: str) -> str:
         return f"{self.key_prefix}{key}" if self.key_prefix else key
+
+    def _refresh_config(self) -> None:
+        """Pull the latest limit/window from the config provider, if set.
+
+        Algorithms should call this at the top of :meth:`is_allowed` to
+        support runtime configuration changes via :class:`~ratelimiter.config.DynamicConfig`.
+        """
+        if self._config_provider is not None:
+            self.limit = self._config_provider.get_limit()
+            self.window = self._config_provider.get_window()
 
     @abstractmethod
     def is_allowed(self, key: str, cost: int = 1) -> RateLimitResult:

@@ -81,8 +81,9 @@ class AdaptiveRateLimiter(BaseAlgorithm):
         low_load_threshold: float = 0.4,
         penalty: float = 0.5,
         key_prefix: str = "",
+        config_provider=None,
     ) -> None:
-        super().__init__(backend, limit, window, key_prefix)
+        super().__init__(backend, limit, window, key_prefix, config_provider)
         self.burst_multiplier = burst_multiplier
         self.adaptive_window = adaptive_window or window * 5
         self.high_load_threshold = high_load_threshold
@@ -139,6 +140,7 @@ class AdaptiveRateLimiter(BaseAlgorithm):
     # ------------------------------------------------------------------
 
     def is_allowed(self, key: str, cost: int = 1) -> RateLimitResult:
+        self._refresh_config()
         now = time.time()
         sw_key = self._sw_key(key)
         tb_key = self._tb_key(key)

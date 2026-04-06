@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from typing import Optional
 
 from ..backends.base import BaseBackend
 from .base import BaseAlgorithm, RateLimitResult
@@ -33,7 +34,11 @@ class SlidingWindowRateLimiter(BaseAlgorithm):
         result = limiter.is_allowed("192.168.1.1")
     """
 
+    def __init__(self, backend, limit, window, key_prefix="", config_provider=None):
+        super().__init__(backend, limit, window, key_prefix, config_provider)
+
     def is_allowed(self, key: str, cost: int = 1) -> RateLimitResult:
+        self._refresh_config()
         now = time.time()
         window_start = now - self.window
         full_key = self._full_key(key)

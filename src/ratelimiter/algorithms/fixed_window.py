@@ -15,6 +15,7 @@ Cons:  Boundary burst problem: a caller can make 2× the limit by sending
 from __future__ import annotations
 
 import time
+from typing import Optional
 
 from ..backends.base import BaseBackend
 from .base import BaseAlgorithm, RateLimitResult
@@ -39,7 +40,11 @@ class FixedWindowRateLimiter(BaseAlgorithm):
             raise TooManyRequests(retry_after=result.retry_after)
     """
 
+    def __init__(self, backend, limit, window, key_prefix="", config_provider=None):
+        super().__init__(backend, limit, window, key_prefix, config_provider)
+
     def is_allowed(self, key: str, cost: int = 1) -> RateLimitResult:
+        self._refresh_config()
         now = time.time()
         # Snap to the start of the current window
         window_start = int(now / self.window) * self.window
