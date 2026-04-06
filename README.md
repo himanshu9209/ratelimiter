@@ -4,7 +4,7 @@
   <a href="https://pypi.org/project/smart-ratelimiter/"><img alt="PyPI" src="https://img.shields.io/pypi/v/smart-ratelimiter.svg?color=blue"></a>
   <a href="https://pypi.org/project/smart-ratelimiter/"><img alt="Python" src="https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue"></a>
   <a href="https://opensource.org/licenses/MIT"><img alt="License" src="https://img.shields.io/badge/License-MIT-green.svg"></a>
- [![CI](https://github.com/himanshu9209/smart-ratelimiter/actions/workflows/ci.yml/badge.svg)](https://github.com/himanshu9209/smart-ratelimiter/actions/workflows/ci.yml)
+ <a href="https://github.com/himanshu9209/smart-ratelimiter/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/himanshu9209/smart-ratelimiter/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="Zero dependencies" src="https://img.shields.io/badge/dependencies-zero-brightgreen">
   <img alt="Typed" src="https://img.shields.io/badge/types-mypy%20strict-blue">
 </p>
