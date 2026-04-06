@@ -17,7 +17,6 @@ from __future__ import annotations
 from typing import Any, Callable, Iterable, Optional, cast
 
 from .algorithms.base import BaseAlgorithm
-from .exceptions import RateLimitExceeded
 
 
 # ---------------------------------------------------------------------------
