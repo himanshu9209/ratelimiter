@@ -10,7 +10,7 @@ All operations use Lua scripts for atomicity where needed.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 from ..exceptions import BackendConnectionError, BackendError
 from .base import BaseBackend
@@ -38,7 +38,7 @@ class RedisBackend(BaseBackend):
 
     def __init__(
         self,
-        client: Optional["redis_lib.Redis[Any]"] = None,
+        client: Optional["redis_lib.Redis"] = None,
         key_prefix: str = "rl:",
     ) -> None:
         try:
@@ -50,7 +50,7 @@ class RedisBackend(BaseBackend):
             ) from exc
 
         if client is None:
-            client = redis_lib.Redis(decode_responses=True)  # type: ignore[assignment]
+            client = redis_lib.Redis(decode_responses=True)
 
         self._r = client
         self._prefix = key_prefix
@@ -83,7 +83,7 @@ class RedisBackend(BaseBackend):
 
     def incr(self, key: str, amount: int = 1) -> int:
         try:
-            return int(self._r.incrby(self._k(key), amount))  # type: ignore[return-value]
+            return cast(int, self._r.incrby(self._k(key), amount))
         except Exception as exc:
             raise BackendError(f"Redis INCR failed: {exc}") from exc
 
@@ -106,13 +106,13 @@ class RedisBackend(BaseBackend):
     def zremrangebyscore(self, key: str, min_score: float, max_score: float) -> int:
         try:
             result = self._r.zremrangebyscore(self._k(key), min_score, max_score)
-            return int(result)  # type: ignore[arg-type]
+            return cast(int, result)
         except Exception as exc:
             raise BackendError(f"Redis ZREMRANGEBYSCORE failed: {exc}") from exc
 
     def zcard(self, key: str) -> int:
         try:
-            return int(self._r.zcard(self._k(key)))  # type: ignore[return-value]
+            return cast(int, self._r.zcard(self._k(key)))
         except Exception as exc:
             raise BackendError(f"Redis ZCARD failed: {exc}") from exc
 
@@ -120,10 +120,11 @@ class RedisBackend(BaseBackend):
         self, key: str, min_score: float, max_score: float
     ) -> list[tuple[str, float]]:
         try:
-            result = self._r.zrangebyscore(
-                self._k(key), min_score, max_score, withscores=True
+            result = cast(
+                list[tuple[str, float]],
+                self._r.zrangebyscore(self._k(key), min_score, max_score, withscores=True),
             )
-            return [(m, s) for m, s in result]  # type: ignore[misc]
+            return [(m, s) for m, s in result]
         except Exception as exc:
             raise BackendError(f"Redis ZRANGEBYSCORE failed: {exc}") from exc
 

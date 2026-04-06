@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from ..backends.base import BaseBackend
 
@@ -34,7 +34,7 @@ class RateLimitResult:
     remaining: int
     reset_after: float
     retry_after: float = 0.0
-    metadata: dict = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     # Convenience helpers -----------------------------------------------
 

@@ -13,7 +13,7 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from ..exceptions import BackendError
 from .base import BaseBackend
@@ -75,7 +75,7 @@ class SQLiteBackend(BaseBackend):
             if self._wal:
                 conn.execute("PRAGMA journal_mode = WAL")
             self._local.conn = conn
-        return self._local.conn  # type: ignore[return-value]
+        return cast(sqlite3.Connection, self._local.conn)
 
     def _init_schema(self) -> None:
         conn = self._conn()

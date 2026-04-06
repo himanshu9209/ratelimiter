@@ -44,9 +44,13 @@ Example::
 from __future__ import annotations
 
 import time
+from typing import TYPE_CHECKING, Optional
 
 from ..backends.base import BaseBackend
 from .base import BaseAlgorithm, RateLimitResult
+
+if TYPE_CHECKING:
+    from ..config import ConfigProvider
 
 
 class SlidingWindowCounterRateLimiter(BaseAlgorithm):
@@ -69,7 +73,14 @@ class SlidingWindowCounterRateLimiter(BaseAlgorithm):
         result = limiter.is_allowed("192.168.1.1")
     """
 
-    def __init__(self, backend, limit, window, key_prefix="", config_provider=None):
+    def __init__(
+        self,
+        backend: BaseBackend,
+        limit: int,
+        window: float,
+        key_prefix: str = "",
+        config_provider: Optional["ConfigProvider"] = None,
+    ) -> None:
         super().__init__(backend, limit, window, key_prefix, config_provider)
 
     def _bucket_key(self, key: str, bucket_id: int) -> str:

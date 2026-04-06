@@ -55,7 +55,7 @@ from __future__ import annotations
 import threading
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 from .algorithms.base import RateLimitResult
 
@@ -206,7 +206,7 @@ class ObservableRateLimiter:
         self._metrics = metrics
 
     def is_allowed(self, key: str, cost: int = 1) -> RateLimitResult:
-        result = self._limiter.is_allowed(key, cost)
+        result = cast(RateLimitResult, self._limiter.is_allowed(key, cost))
         self._metrics.record(key, result)
         return result
 

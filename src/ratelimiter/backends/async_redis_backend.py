@@ -50,7 +50,7 @@ class AsyncRedisBackend:
 
     def __init__(
         self,
-        client: "aioredis.Redis[Any]",
+        client: "aioredis.Redis",
         key_prefix: str = "rl:",
     ) -> None:
         try:
@@ -150,6 +150,6 @@ class AsyncRedisBackend:
 
     async def ping(self) -> bool:
         try:
-            return bool(await self._r.ping())
+            return bool(await self._r.ping())  # type: ignore[misc]
         except Exception:
             raise BackendConnectionError("Cannot reach async Redis server.")

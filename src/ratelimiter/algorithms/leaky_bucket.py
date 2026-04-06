@@ -14,10 +14,13 @@ Cons:  No burst allowance once the bucket is full; latency-sensitive.
 from __future__ import annotations
 
 import time
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from ..backends.base import BaseBackend
 from .base import BaseAlgorithm, RateLimitResult
+
+if TYPE_CHECKING:
+    from ..config import ConfigProvider
 
 
 class LeakyBucketRateLimiter(BaseAlgorithm):
@@ -46,7 +49,7 @@ class LeakyBucketRateLimiter(BaseAlgorithm):
         window: float,
         leak_rate: Optional[float] = None,
         key_prefix: str = "",
-        config_provider=None,
+        config_provider: Optional["ConfigProvider"] = None,
     ) -> None:
         super().__init__(backend, limit, window, key_prefix, config_provider)
         self.leak_rate: float = leak_rate if leak_rate is not None else limit / window

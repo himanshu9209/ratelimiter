@@ -45,9 +45,13 @@ from __future__ import annotations
 
 import time
 import uuid
+from typing import TYPE_CHECKING, Optional
 
 from ..backends.base import BaseBackend
 from .base import BaseAlgorithm, RateLimitResult
+
+if TYPE_CHECKING:
+    from ..config import ConfigProvider
 
 
 class AdaptiveRateLimiter(BaseAlgorithm):
@@ -81,7 +85,7 @@ class AdaptiveRateLimiter(BaseAlgorithm):
         low_load_threshold: float = 0.4,
         penalty: float = 0.5,
         key_prefix: str = "",
-        config_provider=None,
+        config_provider: Optional["ConfigProvider"] = None,
     ) -> None:
         super().__init__(backend, limit, window, key_prefix, config_provider)
         self.burst_multiplier = burst_multiplier

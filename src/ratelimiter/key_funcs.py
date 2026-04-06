@@ -71,10 +71,10 @@ def wsgi_ip_func(
     """
     def key_func(environ: Dict[str, Any]) -> str:
         if trust_x_forwarded_for:
-            xff = environ.get("HTTP_X_FORWARDED_FOR", "")
+            xff = str(environ.get("HTTP_X_FORWARDED_FOR", ""))
             if xff:
                 return xff.split(",")[0].strip()
-        return environ.get("REMOTE_ADDR", "unknown")
+        return str(environ.get("REMOTE_ADDR", "unknown"))
 
     return key_func
 
@@ -146,7 +146,7 @@ def _asgi_get_header(scope: Dict[str, Any], header_name: str) -> str:
     target = header_name.lower().encode()
     for name, value in scope.get("headers", []):
         if name.lower() == target:
-            return value.decode(errors="replace")
+            return str(value.decode(errors="replace"))
     return ""
 
 

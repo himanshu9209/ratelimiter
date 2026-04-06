@@ -28,7 +28,7 @@ from typing import Optional
 try:
     from typing import Protocol, runtime_checkable
 except ImportError:  # Python < 3.8
-    from typing_extensions import Protocol, runtime_checkable  # type: ignore[assignment]
+    from typing_extensions import Protocol, runtime_checkable
 
 
 @runtime_checkable

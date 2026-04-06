@@ -14,7 +14,7 @@ ASGI example (FastAPI / Starlette)::
 
 from __future__ import annotations
 
-from typing import Any, Callable, Iterable, Optional
+from typing import Any, Callable, Iterable, Optional, cast
 
 from .algorithms.base import BaseAlgorithm
 from .exceptions import RateLimitExceeded
@@ -27,10 +27,10 @@ from .exceptions import RateLimitExceeded
 def _default_key_func(environ: dict[str, Any]) -> str:
     """Extract a rate-limit key from a WSGI environ dict."""
     # X-Forwarded-For if behind a proxy, else REMOTE_ADDR
-    xff = environ.get("HTTP_X_FORWARDED_FOR", "")
+    xff = str(environ.get("HTTP_X_FORWARDED_FOR", ""))
     if xff:
         return xff.split(",")[0].strip()
-    return environ.get("REMOTE_ADDR", "unknown")
+    return str(environ.get("REMOTE_ADDR", "unknown"))
 
 
 def _rate_limit_response(
@@ -102,7 +102,7 @@ class RateLimitMiddleware:
             headers += list(result.headers.items())
             return start_response(status, headers, *args)
 
-        return self.app(environ, patched_start_response)
+        return cast(Iterable[bytes], self.app(environ, patched_start_response))
 
 
 # ---------------------------------------------------------------------------

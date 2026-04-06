@@ -14,10 +14,13 @@ Cons:  Slightly more complex state (tokens + last_refill timestamp).
 from __future__ import annotations
 
 import time
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from ..backends.base import BaseBackend
 from .base import BaseAlgorithm, RateLimitResult
+
+if TYPE_CHECKING:
+    from ..config import ConfigProvider
 
 
 class TokenBucketRateLimiter(BaseAlgorithm):
@@ -51,7 +54,7 @@ class TokenBucketRateLimiter(BaseAlgorithm):
         window: float,
         refill_rate: Optional[float] = None,
         key_prefix: str = "",
-        config_provider=None,
+        config_provider: Optional["ConfigProvider"] = None,
     ) -> None:
         super().__init__(backend, limit, window, key_prefix, config_provider)
         self.refill_rate: float = refill_rate if refill_rate is not None else limit / window
