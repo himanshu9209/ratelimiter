@@ -590,6 +590,8 @@ The test suite covers all six algorithms, all three backends, middleware (WSGI +
 
 ---
 
+https://dev.to/himanshu_patel_56287109b6/python-rate-limiter-that-tunes-itself-heres-why-that-matters-25ig
+
 ## License
 
 [MIT](LICENSE) — free to use in commercial and open-source projects.
