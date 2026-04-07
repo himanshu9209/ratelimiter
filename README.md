@@ -30,6 +30,31 @@ Most rate-limiting libraries give you one algorithm and one backend. **smart-rat
 - **Identify clients precisely** — built-in helpers for `X-Forwarded-For`, API keys, and composite keys
 
 ---
+## The problem with rate limiting today
+
+Most rate limiters assume traffic is predictable.
+
+It isn’t.
+
+Static limits either:
+- Throttle too aggressively
+- Or fail under sudden spikes
+
+This is why systems either waste capacity or crash under load.
+
+## Example
+
+Traditional limiter:
+- Limit: 100 req/sec
+- Traffic spike: 300 req/sec
+→ System overloads or drops too many requests
+
+Adaptive limiter:
+- Starts at 100 req/sec
+- Detects spike
+- Adjusts to 180 req/sec dynamically
+→ Maintains stability while maximizing throughput
+
 ## Who is this for?
 
 - Backend engineers handling burst traffic
