@@ -16,7 +16,9 @@
 </p>
 
 ---
+A Python rate limiter that **tunes itself automatically** based on real-time traffic.
 
+Stop guessing rate limits. This adapts dynamically to bursts, spikes, and changing workloads—without manual tuning.
 ## Why smart-ratelimiter?
 
 Most rate-limiting libraries give you one algorithm and one backend. **smart-ratelimiter** gives you six algorithms to choose from (including an adaptive hybrid that auto-tunes itself), three pluggable backends, and a uniform API that works everywhere — from a simple `@rate_limit` decorator to production FastAPI or Flask middleware.
@@ -28,6 +30,11 @@ Most rate-limiting libraries give you one algorithm and one backend. **smart-rat
 - **Identify clients precisely** — built-in helpers for `X-Forwarded-For`, API keys, and composite keys
 
 ---
+## Who is this for?
+
+- Backend engineers handling burst traffic
+- API developers dealing with unpredictable load
+- System designers tired of tuning rate limits
 
 ## Table of Contents
 
