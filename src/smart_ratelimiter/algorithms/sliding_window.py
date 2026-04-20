@@ -32,8 +32,8 @@ class SlidingWindowRateLimiter(BaseAlgorithm):
 
     Example::
 
-        from ratelimiter.backends.memory import MemoryBackend
-        from ratelimiter.algorithms.sliding_window import SlidingWindowRateLimiter
+        from smart_ratelimiter.backends.memory import MemoryBackend
+        from smart_ratelimiter.algorithms.sliding_window import SlidingWindowRateLimiter
 
         limiter = SlidingWindowRateLimiter(MemoryBackend(), limit=10, window=1.0)
         result = limiter.is_allowed("192.168.1.1")

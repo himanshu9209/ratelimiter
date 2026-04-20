@@ -46,7 +46,7 @@ class SQLiteBackend(BaseBackend):
 
     Example::
 
-        from ratelimiter.backends.sqlite_backend import SQLiteBackend
+        from smart_ratelimiter.backends.sqlite_backend import SQLiteBackend
 
         backend = SQLiteBackend(db_path="/var/lib/myapp/ratelimiter.db")
     """

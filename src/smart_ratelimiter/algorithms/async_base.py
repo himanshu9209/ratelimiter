@@ -11,9 +11,9 @@ directly with a fully async backend if you need true non-blocking I/O.
 
 Usage::
 
-    from ratelimiter.algorithms.async_base import AsyncRateLimiter
-    from ratelimiter.algorithms.adaptive import AdaptiveRateLimiter
-    from ratelimiter.backends.memory import MemoryBackend
+    from smart_ratelimiter.algorithms.async_base import AsyncRateLimiter
+    from smart_ratelimiter.algorithms.adaptive import AdaptiveRateLimiter
+    from smart_ratelimiter.backends.memory import MemoryBackend
 
     sync_limiter = AdaptiveRateLimiter(MemoryBackend(), limit=100, window=60)
     limiter = AsyncRateLimiter(sync_limiter)
@@ -51,8 +51,8 @@ class AsyncRateLimiter:
     Example::
 
         import asyncio
-        from ratelimiter import AdaptiveRateLimiter, MemoryBackend
-        from ratelimiter.algorithms.async_base import AsyncRateLimiter
+        from smart_ratelimiter import AdaptiveRateLimiter, MemoryBackend
+        from smart_ratelimiter.algorithms.async_base import AsyncRateLimiter
 
         async def main():
             sync = AdaptiveRateLimiter(MemoryBackend(), limit=10, window=1)
@@ -119,8 +119,8 @@ def async_rate_limit(
 
     Example::
 
-        from ratelimiter import AdaptiveRateLimiter, MemoryBackend
-        from ratelimiter.algorithms.async_base import AsyncRateLimiter, async_rate_limit
+        from smart_ratelimiter import AdaptiveRateLimiter, MemoryBackend
+        from smart_ratelimiter.algorithms.async_base import AsyncRateLimiter, async_rate_limit
 
         _sync = AdaptiveRateLimiter(MemoryBackend(), limit=5, window=1)
         _async = AsyncRateLimiter(_sync)
@@ -131,7 +131,7 @@ def async_rate_limit(
     """
     import functools
 
-    from ratelimiter.exceptions import RateLimitExceeded
+    from smart_ratelimiter.exceptions import RateLimitExceeded
 
     if key is not None and key_func is not None:
         raise ValueError("Specify at most one of 'key' or 'key_func'.")

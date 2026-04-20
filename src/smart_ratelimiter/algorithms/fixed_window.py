@@ -34,8 +34,8 @@ class FixedWindowRateLimiter(BaseAlgorithm):
 
     Example::
 
-        from ratelimiter.backends.memory import MemoryBackend
-        from ratelimiter.algorithms.fixed_window import FixedWindowRateLimiter
+        from smart_ratelimiter.backends.memory import MemoryBackend
+        from smart_ratelimiter.algorithms.fixed_window import FixedWindowRateLimiter
 
         limiter = FixedWindowRateLimiter(MemoryBackend(), limit=100, window=60)
         result = limiter.is_allowed("user:42")

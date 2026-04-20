@@ -17,14 +17,14 @@ from __future__ import annotations
 
 from flask import Flask, g, jsonify, request
 
-from ratelimiter import (
+from smart_ratelimiter import (
     AdaptiveRateLimiter,
     MemoryBackend,
     RateLimitExceeded,
     SlidingWindowRateLimiter,
     rate_limit,
 )
-from ratelimiter.middleware import RateLimitMiddleware
+from smart_ratelimiter.middleware import RateLimitMiddleware
 
 app = Flask(__name__)
 

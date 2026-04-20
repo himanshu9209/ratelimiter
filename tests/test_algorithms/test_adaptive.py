@@ -6,8 +6,8 @@ from unittest.mock import patch
 
 import pytest
 
-from ratelimiter.algorithms.adaptive import AdaptiveRateLimiter
-from ratelimiter.backends.memory import MemoryBackend
+from smart_ratelimiter.algorithms.adaptive import AdaptiveRateLimiter
+from smart_ratelimiter.backends.memory import MemoryBackend
 
 
 @pytest.fixture

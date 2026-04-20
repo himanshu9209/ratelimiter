@@ -13,12 +13,12 @@ import time
 
 import pytest
 
-from ratelimiter.algorithms.fixed_window import FixedWindowRateLimiter
-from ratelimiter.algorithms.sliding_window import SlidingWindowRateLimiter
-from ratelimiter.algorithms.sliding_window_counter import SlidingWindowCounterRateLimiter
-from ratelimiter.backends.memory import MemoryBackend
-from ratelimiter.config import DynamicConfig
-from ratelimiter.key_funcs import (
+from smart_ratelimiter.algorithms.fixed_window import FixedWindowRateLimiter
+from smart_ratelimiter.algorithms.sliding_window import SlidingWindowRateLimiter
+from smart_ratelimiter.algorithms.sliding_window_counter import SlidingWindowCounterRateLimiter
+from smart_ratelimiter.backends.memory import MemoryBackend
+from smart_ratelimiter.config import DynamicConfig
+from smart_ratelimiter.key_funcs import (
     asgi_api_key_func,
     asgi_composite_key_func,
     asgi_ip_func,
@@ -26,7 +26,7 @@ from ratelimiter.key_funcs import (
     wsgi_composite_key_func,
     wsgi_ip_func,
 )
-from ratelimiter.metrics import InMemoryMetricsCollector, ObservableRateLimiter
+from smart_ratelimiter.metrics import InMemoryMetricsCollector, ObservableRateLimiter
 
 
 # ===========================================================================

@@ -7,8 +7,8 @@ from unittest.mock import patch
 
 import pytest
 
-from ratelimiter.algorithms.fixed_window import FixedWindowRateLimiter
-from ratelimiter.backends.memory import MemoryBackend
+from smart_ratelimiter.algorithms.fixed_window import FixedWindowRateLimiter
+from smart_ratelimiter.backends.memory import MemoryBackend
 
 
 @pytest.fixture

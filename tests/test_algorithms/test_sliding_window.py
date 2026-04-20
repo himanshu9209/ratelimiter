@@ -6,8 +6,8 @@ from unittest.mock import patch
 
 import pytest
 
-from ratelimiter.algorithms.sliding_window import SlidingWindowRateLimiter
-from ratelimiter.backends.memory import MemoryBackend
+from smart_ratelimiter.algorithms.sliding_window import SlidingWindowRateLimiter
+from smart_ratelimiter.backends.memory import MemoryBackend
 
 
 @pytest.fixture

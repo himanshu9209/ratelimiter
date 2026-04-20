@@ -52,9 +52,9 @@ def rate_limit(
 
     Example::
 
-        from ratelimiter.backends.memory import MemoryBackend
-        from ratelimiter.algorithms.token_bucket import TokenBucketRateLimiter
-        from ratelimiter.decorators import rate_limit
+        from smart_ratelimiter.backends.memory import MemoryBackend
+        from smart_ratelimiter.algorithms.token_bucket import TokenBucketRateLimiter
+        from smart_ratelimiter.decorators import rate_limit
 
         limiter = TokenBucketRateLimiter(MemoryBackend(), limit=10, window=1)
 

@@ -7,9 +7,9 @@ attaching a :class:`ConfigProvider` to any algorithm.
 
 Quick start::
 
-    from ratelimiter.config import DynamicConfig
-    from ratelimiter.algorithms.sliding_window import SlidingWindowRateLimiter
-    from ratelimiter.backends.memory import MemoryBackend
+    from smart_ratelimiter.config import DynamicConfig
+    from smart_ratelimiter.algorithms.sliding_window import SlidingWindowRateLimiter
+    from smart_ratelimiter.backends.memory import MemoryBackend
 
     cfg = DynamicConfig(limit=100, window=60)
     limiter = SlidingWindowRateLimiter(

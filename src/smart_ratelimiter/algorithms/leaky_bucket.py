@@ -35,8 +35,8 @@ class LeakyBucketRateLimiter(BaseAlgorithm):
 
     Example::
 
-        from ratelimiter.backends.memory import MemoryBackend
-        from ratelimiter.algorithms.leaky_bucket import LeakyBucketRateLimiter
+        from smart_ratelimiter.backends.memory import MemoryBackend
+        from smart_ratelimiter.algorithms.leaky_bucket import LeakyBucketRateLimiter
 
         limiter = LeakyBucketRateLimiter(MemoryBackend(), limit=100, window=10)
         result = limiter.is_allowed("user:7")

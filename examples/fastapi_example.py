@@ -20,7 +20,7 @@ from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 
-from ratelimiter import (
+from smart_ratelimiter import (
     AdaptiveRateLimiter,
     MemoryBackend,
     RateLimitExceeded,
@@ -28,7 +28,7 @@ from ratelimiter import (
     SlidingWindowRateLimiter,
     TokenBucketRateLimiter,
 )
-from ratelimiter.middleware import AsyncRateLimitMiddleware
+from smart_ratelimiter.middleware import AsyncRateLimitMiddleware
 
 app = FastAPI(title="smart-ratelimiter FastAPI demo")
 
@@ -180,7 +180,7 @@ async def health():
 # To switch to a distributed Redis backend, replace MemoryBackend() with:
 #
 #   import redis
-#   from ratelimiter.backends.redis_backend import RedisBackend
+#   from smart_ratelimiter.backends.redis_backend import RedisBackend
 #
 #   redis_client = redis.Redis(host="redis", port=6379, decode_responses=True)
 #   backend = RedisBackend(client=redis_client, key_prefix="myapp:")

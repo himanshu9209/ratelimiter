@@ -6,8 +6,8 @@ from unittest.mock import patch
 
 import pytest
 
-from ratelimiter.algorithms.leaky_bucket import LeakyBucketRateLimiter
-from ratelimiter.backends.memory import MemoryBackend
+from smart_ratelimiter.algorithms.leaky_bucket import LeakyBucketRateLimiter
+from smart_ratelimiter.backends.memory import MemoryBackend
 
 
 @pytest.fixture

@@ -6,7 +6,7 @@ A flexible, pluggable API rate limiter with multiple algorithms and backends.
 
 Quick start::
 
-    from ratelimiter import AdaptiveRateLimiter, MemoryBackend
+    from smart_ratelimiter import AdaptiveRateLimiter, MemoryBackend
 
     limiter = AdaptiveRateLimiter(MemoryBackend(), limit=100, window=60)
     result = limiter.is_allowed("user:42")

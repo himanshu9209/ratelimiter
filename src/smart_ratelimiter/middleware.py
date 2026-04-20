@@ -3,12 +3,12 @@ WSGI and ASGI middleware for HTTP rate limiting.
 
 WSGI example (Flask / Django)::
 
-    from ratelimiter.middleware import RateLimitMiddleware
+    from smart_ratelimiter.middleware import RateLimitMiddleware
     app = RateLimitMiddleware(app, limiter=limiter, key_func=lambda env: env.get("REMOTE_ADDR"))
 
 ASGI example (FastAPI / Starlette)::
 
-    from ratelimiter.middleware import AsyncRateLimitMiddleware
+    from smart_ratelimiter.middleware import AsyncRateLimitMiddleware
     app.add_middleware(AsyncRateLimitMiddleware, limiter=limiter)
 """
 
@@ -62,9 +62,9 @@ class RateLimitMiddleware:
     Example::
 
         from flask import Flask
-        from ratelimiter.backends.memory import MemoryBackend
-        from ratelimiter.algorithms.sliding_window import SlidingWindowRateLimiter
-        from ratelimiter.middleware import RateLimitMiddleware
+        from smart_ratelimiter.backends.memory import MemoryBackend
+        from smart_ratelimiter.algorithms.sliding_window import SlidingWindowRateLimiter
+        from smart_ratelimiter.middleware import RateLimitMiddleware
 
         flask_app = Flask(__name__)
         limiter = SlidingWindowRateLimiter(MemoryBackend(), limit=60, window=60)
@@ -120,9 +120,9 @@ class AsyncRateLimitMiddleware:
     Example::
 
         from fastapi import FastAPI
-        from ratelimiter.backends.redis_backend import RedisBackend
-        from ratelimiter.algorithms.adaptive import AdaptiveRateLimiter
-        from ratelimiter.middleware import AsyncRateLimitMiddleware
+        from smart_ratelimiter.backends.redis_backend import RedisBackend
+        from smart_ratelimiter.algorithms.adaptive import AdaptiveRateLimiter
+        from smart_ratelimiter.middleware import AsyncRateLimitMiddleware
 
         fast_app = FastAPI()
         limiter = AdaptiveRateLimiter(RedisBackend(), limit=100, window=60)

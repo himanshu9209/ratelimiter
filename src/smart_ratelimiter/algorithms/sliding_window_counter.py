@@ -32,8 +32,8 @@ when you need exact counts.
 
 Example::
 
-    from ratelimiter.backends.memory import MemoryBackend
-    from ratelimiter.algorithms.sliding_window_counter import SlidingWindowCounterRateLimiter
+    from smart_ratelimiter.backends.memory import MemoryBackend
+    from smart_ratelimiter.algorithms.sliding_window_counter import SlidingWindowCounterRateLimiter
 
     limiter = SlidingWindowCounterRateLimiter(MemoryBackend(), limit=100, window=60)
     result = limiter.is_allowed("user:42")

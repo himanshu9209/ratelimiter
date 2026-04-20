@@ -1,16 +1,22 @@
 """
 Benchmark script for smart-ratelimiter.
-Tests throughput (ops/sec) and latency (µs) for every algorithm × backend combination.
+
+Two suites:
+  1. Single-threaded — throughput (ops/sec) and latency percentiles.
+  2. Multi-threaded  — N threads each hammering is_allowed() concurrently.
+                       Shows the real-world cost of lock contention.
 """
 
 import sys
 import time
 import statistics
 import gc
+import threading
+import concurrent.futures
 
 sys.path.insert(0, "src")
 
-from ratelimiter import (
+from smart_ratelimiter import (
     FixedWindowRateLimiter,
     SlidingWindowRateLimiter,
     SlidingWindowCounterRateLimiter,
@@ -26,6 +32,10 @@ ITERATIONS = 5000
 LIMIT = 999_999_999  # effectively unlimited so nothing gets rejected
 WINDOW = 60.0
 
+# Thread counts to test in the concurrent suite
+THREAD_COUNTS = [1, 2, 4, 8]
+CONCURRENT_ITERATIONS = 2000  # per thread
+
 
 def make_limiters(backend_factory):
     return [
@@ -38,10 +48,13 @@ def make_limiters(backend_factory):
     ]
 
 
+# ---------------------------------------------------------------------------
+# Single-threaded benchmark
+# ---------------------------------------------------------------------------
+
 def benchmark(name, limiter, iterations, warmup):
     key = "bench:user"
 
-    # Warmup
     for _ in range(warmup):
         limiter.is_allowed(key)
 
@@ -61,8 +74,8 @@ def benchmark(name, limiter, iterations, warmup):
     elapsed = end_total - start_total
     ops_per_sec = iterations / elapsed
     p50 = statistics.median(latencies)
-    p95 = statistics.quantiles(latencies, n=20)[18]  # 95th percentile
-    p99 = statistics.quantiles(latencies, n=100)[98]  # 99th percentile
+    p95 = statistics.quantiles(latencies, n=20)[18]
+    p99 = statistics.quantiles(latencies, n=100)[98]
     mean = statistics.mean(latencies)
 
     return {
@@ -97,12 +110,82 @@ def run_suite(backend_name, backend_factory):
     return results
 
 
+# ---------------------------------------------------------------------------
+# Multi-threaded benchmark
+# ---------------------------------------------------------------------------
+
+def _thread_worker(limiter, key: str, iterations: int, barrier: threading.Barrier):
+    """Worker: wait for all threads to be ready, then hammer is_allowed()."""
+    barrier.wait()  # synchronise start so all threads hit simultaneously
+    start = time.perf_counter()
+    for _ in range(iterations):
+        limiter.is_allowed(key)
+    return time.perf_counter() - start
+
+
+def benchmark_concurrent(limiter, n_threads: int, iterations_per_thread: int):
+    """Return aggregate ops/sec across all threads."""
+    barrier = threading.Barrier(n_threads)
+    total_iterations = n_threads * iterations_per_thread
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=n_threads) as pool:
+        futures = [
+            pool.submit(
+                _thread_worker,
+                limiter,
+                f"bench:user:{t % 4}",  # 4 distinct keys to show key-shard behaviour
+                iterations_per_thread,
+                barrier,
+            )
+            for t in range(n_threads)
+        ]
+        wall_times = [f.result() for f in futures]
+
+    # Total elapsed ≈ max individual time (all started in sync)
+    elapsed = max(wall_times)
+    return total_iterations / elapsed
+
+
+def run_concurrent_suite():
+    print(f"\n{'='*70}")
+    print("  Concurrent benchmark — MemoryBackend only")
+    print(f"  {CONCURRENT_ITERATIONS} iterations/thread, keys spread across 4 buckets")
+    print(f"{'='*70}")
+
+    header = f"{'Algorithm':<24}"
+    for t in THREAD_COUNTS:
+        header += f" {f'{t}T ops/s':>12}"
+    print(header)
+    print(f"{'-'*24}" + f" {'-'*12}" * len(THREAD_COUNTS))
+
+    algo_names_limiters = make_limiters(MemoryBackend)
+
+    for algo_name, limiter in algo_names_limiters:
+        row = f"{algo_name:<24}"
+        for n_threads in THREAD_COUNTS:
+            ops = benchmark_concurrent(limiter, n_threads, CONCURRENT_ITERATIONS)
+            row += f" {ops:>12,.0f}"
+        print(row)
+
+    print()
+    print("  Interpretation:")
+    print("  * 1T = baseline single-threaded throughput.")
+    print("  * If 4T ~= 4x1T -> near-linear scaling (shard locks help).")
+    print("  * If 4T ~= 1T   -> single hot lock is the bottleneck.")
+    print("  * GIL means pure-Python ops may not scale past 2-3 threads regardless.")
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
 if __name__ == "__main__":
     print("smart-ratelimiter benchmark")
     print(f"Warmup: {WARMUP} | Iterations: {ITERATIONS} per algorithm")
 
-    memory_results = run_suite("In-Memory", MemoryBackend)
-    sqlite_results = run_suite("SQLite (WAL)", lambda: SQLiteBackend(db_path=":memory:"))
+    run_suite("In-Memory", MemoryBackend)
+    run_suite("SQLite (WAL)", lambda: SQLiteBackend(db_path=":memory:"))
+    run_concurrent_suite()
 
     print(f"\n{'='*60}")
     print("Done.")

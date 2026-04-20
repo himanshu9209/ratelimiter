@@ -10,6 +10,7 @@ All operations use Lua scripts for atomicity where needed.
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any, Optional, cast
 
 from ..exceptions import BackendConnectionError, BackendError
@@ -30,7 +31,7 @@ class RedisBackend(BaseBackend):
     Example::
 
         import redis
-        from ratelimiter.backends.redis_backend import RedisBackend
+        from smart_ratelimiter.backends.redis_backend import RedisBackend
 
         client = redis.Redis(host="localhost", port=6379, decode_responses=True)
         backend = RedisBackend(client=client)
@@ -64,14 +65,20 @@ class RedisBackend(BaseBackend):
 
     def get(self, key: str) -> Optional[Any]:
         try:
-            return self._r.get(self._k(key))
+            raw = self._r.get(self._k(key))
+            if raw is None:
+                return None
+            try:
+                return json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                return raw
         except Exception as exc:
             raise BackendError(f"Redis GET failed: {exc}") from exc
 
     def set(self, key: str, value: Any, ttl: Optional[float] = None) -> None:
         try:
             px = int(ttl * 1000) if ttl is not None else None
-            self._r.set(self._k(key), value, px=px)
+            self._r.set(self._k(key), json.dumps(value), px=px)
         except Exception as exc:
             raise BackendError(f"Redis SET failed: {exc}") from exc
 

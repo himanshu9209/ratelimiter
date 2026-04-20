@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from ratelimiter.algorithms.fixed_window import FixedWindowRateLimiter
-from ratelimiter.algorithms.token_bucket import TokenBucketRateLimiter
-from ratelimiter.backends.memory import MemoryBackend
-from ratelimiter.decorators import RateLimitContext, rate_limit
-from ratelimiter.exceptions import RateLimitExceeded
+from smart_ratelimiter.algorithms.fixed_window import FixedWindowRateLimiter
+from smart_ratelimiter.algorithms.token_bucket import TokenBucketRateLimiter
+from smart_ratelimiter.backends.memory import MemoryBackend
+from smart_ratelimiter.decorators import RateLimitContext, rate_limit
+from smart_ratelimiter.exceptions import RateLimitExceeded
 
 
 @pytest.fixture

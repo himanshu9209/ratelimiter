@@ -11,8 +11,8 @@ global limit, which is critical for multi-tenant services.
 
 WSGI usage (Flask / Django)::
 
-    from ratelimiter.key_funcs import wsgi_api_key_func
-    from ratelimiter.middleware import RateLimitMiddleware
+    from smart_ratelimiter.key_funcs import wsgi_api_key_func
+    from smart_ratelimiter.middleware import RateLimitMiddleware
 
     app = RateLimitMiddleware(
         flask_app.wsgi_app,
@@ -22,8 +22,8 @@ WSGI usage (Flask / Django)::
 
 ASGI usage (FastAPI / Starlette)::
 
-    from ratelimiter.key_funcs import asgi_api_key_func
-    from ratelimiter.middleware import AsyncRateLimitMiddleware
+    from smart_ratelimiter.key_funcs import asgi_api_key_func
+    from smart_ratelimiter.middleware import AsyncRateLimitMiddleware
 
     app.add_middleware(
         AsyncRateLimitMiddleware,

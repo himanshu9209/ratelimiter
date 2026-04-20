@@ -12,9 +12,9 @@ Requires::
 Example::
 
     import redis.asyncio as aioredis
-    from ratelimiter.backends.async_redis_backend import AsyncRedisBackend
-    from ratelimiter.algorithms.async_base import AsyncRateLimiter
-    from ratelimiter.algorithms.adaptive import AdaptiveRateLimiter
+    from smart_ratelimiter.backends.async_redis_backend import AsyncRedisBackend
+    from smart_ratelimiter.algorithms.async_base import AsyncRateLimiter
+    from smart_ratelimiter.algorithms.adaptive import AdaptiveRateLimiter
 
     async def main():
         client = aioredis.Redis(host="localhost", decode_responses=True)

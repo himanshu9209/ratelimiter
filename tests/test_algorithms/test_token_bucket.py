@@ -6,8 +6,8 @@ from unittest.mock import patch
 
 import pytest
 
-from ratelimiter.algorithms.token_bucket import TokenBucketRateLimiter
-from ratelimiter.backends.memory import MemoryBackend
+from smart_ratelimiter.algorithms.token_bucket import TokenBucketRateLimiter
+from smart_ratelimiter.backends.memory import MemoryBackend
 
 
 @pytest.fixture

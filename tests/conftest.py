@@ -2,8 +2,8 @@
 
 import pytest
 
-from ratelimiter.backends.memory import MemoryBackend
-from ratelimiter.backends.sqlite_backend import SQLiteBackend
+from smart_ratelimiter.backends.memory import MemoryBackend
+from smart_ratelimiter.backends.sqlite_backend import SQLiteBackend
 
 
 @pytest.fixture

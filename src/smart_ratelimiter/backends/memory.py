@@ -3,6 +3,9 @@ Thread-safe in-memory storage backend.
 
 Suitable for single-process applications and testing.  State is lost
 when the process exits.  For multi-process deployments use Redis or SQLite.
+
+Uses 16 independent shards (each with its own lock) so unrelated keys never
+contend.  All operations on a single key are still atomic.
 """
 
 from __future__ import annotations
@@ -13,9 +16,10 @@ import time
 from collections import defaultdict
 from typing import Any, Optional
 
-_MAX_MEMBER = "\xff"  # sentinel larger than any real member string
-
 from .base import BaseBackend
+
+_NUM_SHARDS = 16
+_MAX_MEMBER = "\xff"  # sentinel larger than any real member string
 
 
 class _Entry:
@@ -33,30 +37,43 @@ class _Entry:
 class MemoryBackend(BaseBackend):
     """In-process, thread-safe backend backed by plain Python dicts.
 
+    State is split across ``_NUM_SHARDS`` independent shards.  Operations on
+    different keys that land in different shards proceed concurrently without
+    any lock contention.  Operations on the same key always use the same shard
+    and remain fully atomic.
+
     Example::
 
-        from ratelimiter.backends.memory import MemoryBackend
+        from smart_ratelimiter.backends.memory import MemoryBackend
         backend = MemoryBackend()
     """
 
     def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self._store: dict[str, _Entry] = {}
-        # sorted sets: key -> list of (score, member), kept sorted by (score, member)
-        self._zsets: dict[str, list[tuple[float, str]]] = defaultdict(list)
-        # member lookup: key -> {member: score} for O(1) existence check in zadd
-        self._zmembers: dict[str, dict[str, float]] = defaultdict(dict)
+        self._locks: list[threading.Lock] = [threading.Lock() for _ in range(_NUM_SHARDS)]
+        # Per-shard KV stores
+        self._stores: list[dict[str, _Entry]] = [{} for _ in range(_NUM_SHARDS)]
+        # Per-shard sorted sets: key -> sorted list of (score, member)
+        self._zsets: list[dict[str, list[tuple[float, str]]]] = [
+            defaultdict(list) for _ in range(_NUM_SHARDS)
+        ]
+        # Per-shard member lookup: key -> {member: score} for O(1) zadd dedup
+        self._zmembers: list[dict[str, dict[str, float]]] = [
+            defaultdict(dict) for _ in range(_NUM_SHARDS)
+        ]
 
     # ------------------------------------------------------------------
-    # Helpers
+    # Internal helpers
     # ------------------------------------------------------------------
 
-    def _get_entry(self, key: str) -> Optional[_Entry]:
-        entry = self._store.get(key)
+    def _shard(self, key: str) -> int:
+        return hash(key) % _NUM_SHARDS
+
+    def _get_entry(self, store: dict[str, _Entry], key: str) -> Optional[_Entry]:
+        entry = store.get(key)
         if entry is None:
             return None
         if entry.expired:
-            del self._store[key]
+            del store[key]
             return None
         return entry
 
@@ -65,33 +82,38 @@ class MemoryBackend(BaseBackend):
     # ------------------------------------------------------------------
 
     def get(self, key: str) -> Optional[Any]:
-        with self._lock:
-            entry = self._get_entry(key)
+        s = self._shard(key)
+        with self._locks[s]:
+            entry = self._get_entry(self._stores[s], key)
             return entry.value if entry else None
 
     def set(self, key: str, value: Any, ttl: Optional[float] = None) -> None:
         expires_at = time.monotonic() + ttl if ttl is not None else None
-        with self._lock:
-            self._store[key] = _Entry(value, expires_at)
+        s = self._shard(key)
+        with self._locks[s]:
+            self._stores[s][key] = _Entry(value, expires_at)
 
     def delete(self, key: str) -> None:
-        with self._lock:
-            self._store.pop(key, None)
-            self._zsets.pop(key, None)
-            self._zmembers.pop(key, None)
+        s = self._shard(key)
+        with self._locks[s]:
+            self._stores[s].pop(key, None)
+            self._zsets[s].pop(key, None)
+            self._zmembers[s].pop(key, None)
 
     def incr(self, key: str, amount: int = 1) -> int:
-        with self._lock:
-            entry = self._get_entry(key)
+        s = self._shard(key)
+        with self._locks[s]:
+            entry = self._get_entry(self._stores[s], key)
             current = int(entry.value) if entry else 0
             new_value = current + amount
             expires_at = entry.expires_at if entry else None
-            self._store[key] = _Entry(new_value, expires_at)
+            self._stores[s][key] = _Entry(new_value, expires_at)
             return new_value
 
     def expire(self, key: str, ttl: float) -> None:
-        with self._lock:
-            entry = self._get_entry(key)
+        s = self._shard(key)
+        with self._locks[s]:
+            entry = self._get_entry(self._stores[s], key)
             if entry:
                 entry.expires_at = time.monotonic() + ttl
 
@@ -100,12 +122,12 @@ class MemoryBackend(BaseBackend):
     # ------------------------------------------------------------------
 
     def zadd(self, key: str, score: float, member: str) -> None:
-        with self._lock:
-            zset = self._zsets[key]
-            members = self._zmembers[key]
+        s = self._shard(key)
+        with self._locks[s]:
+            zset = self._zsets[s][key]
+            members = self._zmembers[s][key]
             old_score = members.get(member)
             if old_score is not None:
-                # Remove the stale entry at its old position (O(log N) find + O(N) shift)
                 lo = bisect.bisect_left(zset, (old_score, member))
                 hi = bisect.bisect_right(zset, (old_score, member))
                 for i in range(lo, hi):
@@ -116,40 +138,50 @@ class MemoryBackend(BaseBackend):
             members[member] = score
 
     def zremrangebyscore(self, key: str, min_score: float, max_score: float) -> int:
-        with self._lock:
-            zset = self._zsets[key]
+        s = self._shard(key)
+        with self._locks[s]:
+            zset = self._zsets[s][key]
             lo = bisect.bisect_left(zset, (min_score,))
             hi = bisect.bisect_right(zset, (max_score, _MAX_MEMBER))
             removed = hi - lo
             if removed:
-                members = self._zmembers[key]
+                members = self._zmembers[s][key]
                 for _, m in zset[lo:hi]:
                     del members[m]
                 del zset[lo:hi]
             return removed
 
     def zcard(self, key: str) -> int:
-        with self._lock:
-            return len(self._zsets[key])
+        s = self._shard(key)
+        with self._locks[s]:
+            return len(self._zsets[s][key])
 
     def zrange_by_score(
         self, key: str, min_score: float, max_score: float
     ) -> list[tuple[str, float]]:
-        with self._lock:
-            zset = self._zsets[key]
+        s = self._shard(key)
+        with self._locks[s]:
+            zset = self._zsets[s][key]
             lo = bisect.bisect_left(zset, (min_score,))
             hi = bisect.bisect_right(zset, (max_score, _MAX_MEMBER))
-            return [(m, s) for s, m in zset[lo:hi]]
+            return [(m, sc) for sc, m in zset[lo:hi]]
 
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
 
     def close(self) -> None:
-        with self._lock:
-            self._store.clear()
-            self._zsets.clear()
-            self._zmembers.clear()
+        # Acquire all shard locks in index order to avoid deadlocks.
+        for lock in self._locks:
+            lock.acquire()
+        try:
+            for s in range(_NUM_SHARDS):
+                self._stores[s].clear()
+                self._zsets[s].clear()
+                self._zmembers[s].clear()
+        finally:
+            for lock in self._locks:
+                lock.release()
 
     def clear(self) -> None:
         """Remove all keys — useful in tests."""

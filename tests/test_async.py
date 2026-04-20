@@ -6,13 +6,13 @@ import asyncio
 
 import pytest
 
-from ratelimiter import (
+from smart_ratelimiter import (
     AdaptiveRateLimiter,
     FixedWindowRateLimiter,
     MemoryBackend,
     RateLimitExceeded,
 )
-from ratelimiter.algorithms.async_base import AsyncRateLimiter, async_rate_limit
+from smart_ratelimiter.algorithms.async_base import AsyncRateLimiter, async_rate_limit
 
 
 @pytest.fixture

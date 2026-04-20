@@ -19,9 +19,9 @@ Tracking *dropped* requests (HTTP 429s) is essential for SRE work:
 
 Usage::
 
-    from ratelimiter.backends.memory import MemoryBackend
-    from ratelimiter.algorithms.sliding_window import SlidingWindowRateLimiter
-    from ratelimiter.metrics import InMemoryMetricsCollector, ObservableRateLimiter
+    from smart_ratelimiter.backends.memory import MemoryBackend
+    from smart_ratelimiter.algorithms.sliding_window import SlidingWindowRateLimiter
+    from smart_ratelimiter.metrics import InMemoryMetricsCollector, ObservableRateLimiter
 
     metrics = InMemoryMetricsCollector()
     limiter = ObservableRateLimiter(

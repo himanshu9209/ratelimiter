@@ -37,8 +37,8 @@ class TokenBucketRateLimiter(BaseAlgorithm):
 
     Example::
 
-        from ratelimiter.backends.memory import MemoryBackend
-        from ratelimiter.algorithms.token_bucket import TokenBucketRateLimiter
+        from smart_ratelimiter.backends.memory import MemoryBackend
+        from smart_ratelimiter.algorithms.token_bucket import TokenBucketRateLimiter
 
         # 50 req/s with burst up to 200
         limiter = TokenBucketRateLimiter(

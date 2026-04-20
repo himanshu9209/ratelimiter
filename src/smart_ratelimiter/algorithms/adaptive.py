@@ -28,8 +28,8 @@ manual tuning.
 
 Example::
 
-    from ratelimiter.backends.memory import MemoryBackend
-    from ratelimiter.algorithms.adaptive import AdaptiveRateLimiter
+    from smart_ratelimiter.backends.memory import MemoryBackend
+    from smart_ratelimiter.algorithms.adaptive import AdaptiveRateLimiter
 
     limiter = AdaptiveRateLimiter(
         backend=MemoryBackend(),
