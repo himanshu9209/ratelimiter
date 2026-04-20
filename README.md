@@ -1,10 +1,10 @@
 # smart-ratelimiter
 
 <p align="center">
-  <a href="https://pypi.org/project/smart-ratelimiter/"><img alt="PyPI" src="https://img.shields.io/pypi/v/smart-ratelimiter.svg?color=blue"></a>
-  <a href="https://pypi.org/project/smart-ratelimiter/"><img alt="Python" src="https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue"></a>
+  <a href="https://pypi.org/project/smart-ratelimiter/"><img alt="PyPI" src="https://img.shields.io/pypi/v/ratelimiter.svg?color=blue"></a>
+  <a href="https://pypi.org/project/ratelimiter/"><img alt="Python" src="https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue"></a>
   <a href="https://opensource.org/licenses/MIT"><img alt="License" src="https://img.shields.io/badge/License-MIT-green.svg"></a>
-  [![CI](https://github.com/himanshu9209/smart-ratelimiter/actions/workflows/ci.yml/badge.svg)](https://github.com/himanshu9209/smart-ratelimiter/actions/workflows/ci.yml)
+ <a href="https://github.com/himanshu9209/ratelimiter/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/himanshu9209/ratelimiter/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="Zero dependencies" src="https://img.shields.io/badge/dependencies-zero-brightgreen">
   <img alt="Typed" src="https://img.shields.io/badge/types-mypy%20strict-blue">
 </p>
@@ -16,6 +16,9 @@
 </p>
 
 ---
+A Python rate limiter that **tunes itself automatically** based on real-time traffic.
+> Static rate limiters guess.  
+> This one learns.
 
 ## Why smart-ratelimiter?
 
@@ -28,6 +31,36 @@ Most rate-limiting libraries give you one algorithm and one backend. **smart-rat
 - **Identify clients precisely** — built-in helpers for `X-Forwarded-For`, API keys, and composite keys
 
 ---
+## The problem with rate limiting today
+
+Most rate limiters assume traffic is predictable.
+
+It isn’t.
+
+Static limits either:
+- Throttle too aggressively
+- Or fail under sudden spikes
+
+This is why systems either waste capacity or crash under load.
+
+## Example
+
+Traditional limiter:
+- Limit: 100 req/sec
+- Traffic spike: 300 req/sec
+→ System overloads or drops too many requests
+
+Adaptive limiter:
+- Starts at 100 req/sec
+- Detects spike
+- Adjusts to 180 req/sec dynamically
+→ Maintains stability while maximizing throughput
+
+## Who is this for?
+
+- Backend engineers handling burst traffic
+- API developers dealing with unpredictable load
+- System designers tired of tuning rate limits
 
 ## Table of Contents
 
@@ -623,6 +656,8 @@ ruff check src/
 The test suite covers all six algorithms, all three backends, middleware (WSGI + ASGI), decorators, dynamic configuration, metrics collection, and client identification helpers.
 
 ---
+
+https://dev.to/himanshu_patel_56287109b6/python-rate-limiter-that-tunes-itself-heres-why-that-matters-25ig
 
 ## License
 
