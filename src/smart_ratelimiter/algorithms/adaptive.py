@@ -47,13 +47,13 @@ import itertools
 import time
 from typing import TYPE_CHECKING, Optional
 
-_counter = itertools.count()
-
 from ..backends.base import BaseBackend
 from .base import BaseAlgorithm, RateLimitResult
 
 if TYPE_CHECKING:
     from ..config import ConfigProvider
+
+_counter = itertools.count()
 
 
 class AdaptiveRateLimiter(BaseAlgorithm):
