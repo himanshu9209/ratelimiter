@@ -11,9 +11,11 @@ Cons:  Higher memory usage — stores one entry per request.
 
 from __future__ import annotations
 
+import itertools
 import time
-import uuid
 from typing import TYPE_CHECKING, Optional
+
+_counter = itertools.count()
 
 from ..backends.base import BaseBackend
 from .base import BaseAlgorithm, RateLimitResult
@@ -64,7 +66,7 @@ class SlidingWindowRateLimiter(BaseAlgorithm):
         if allowed:
             # 3. Record each unit of cost as a separate timestamped entry
             for _ in range(cost):
-                member = f"{now}:{uuid.uuid4().hex}"
+                member = f"{now}:{next(_counter)}"
                 self.backend.zadd(full_key, now, member)
             # Keep the sorted set alive for at least one full window
             self.backend.expire(full_key, self.window + 1)

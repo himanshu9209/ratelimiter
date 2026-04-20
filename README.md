@@ -569,6 +569,40 @@ limiter = AdaptiveRateLimiter(backend, limit=100, window=60)
 
 ---
 
+## Benchmarks
+
+Measured on Python 3.12 — 5,000 iterations per algorithm after a 500-iteration warmup, effectively-unlimited limit so no requests are rejected.
+
+### In-Memory Backend
+
+| Algorithm | ops/sec | mean µs | p50 µs | p95 µs | p99 µs |
+|---|---:|---:|---:|---:|---:|
+| FixedWindow | 117,297 | 8.07 | 7.10 | 12.20 | 30.39 |
+| SlidingWindow | 4,245 | 235.12 | 204.95 | 563.78 | 747.30 |
+| SlidingWindowCounter | 129,097 | 7.50 | 6.90 | 11.90 | 17.00 |
+| TokenBucket | 188,437 | 5.07 | 5.00 | 7.70 | 7.90 |
+| LeakyBucket | 249,237 | 3.85 | 3.80 | 4.00 | 4.30 |
+| Adaptive | 59,526 | 16.55 | 13.70 | 26.70 | 48.50 |
+
+### SQLite Backend (WAL mode, `:memory:`)
+
+| Algorithm | ops/sec | mean µs | p50 µs | p95 µs | p99 µs |
+|---|---:|---:|---:|---:|---:|
+| FixedWindow | 56,170 | 17.53 | 15.70 | 24.60 | 46.29 |
+| SlidingWindow | 276 | 3,628.17 | 3,310.80 | 8,062.33 | 10,973.37 |
+| SlidingWindowCounter | 31,958 | 30.99 | 27.20 | 47.00 | 79.19 |
+| TokenBucket | 43,335 | 22.83 | 19.80 | 39.80 | 68.89 |
+| LeakyBucket | 39,095 | 25.31 | 23.20 | 38.99 | 89.80 |
+| Adaptive | 4,230 | 235.83 | 221.35 | 450.30 | 600.17 |
+
+Reproduce with:
+
+```bash
+PYTHONPATH=src python benchmark.py
+```
+
+---
+
 ## Development
 
 ```bash

@@ -43,9 +43,11 @@ Example::
 
 from __future__ import annotations
 
+import itertools
 import time
-import uuid
 from typing import TYPE_CHECKING, Optional
+
+_counter = itertools.count()
 
 from ..backends.base import BaseBackend
 from .base import BaseAlgorithm, RateLimitResult
@@ -97,6 +99,9 @@ class AdaptiveRateLimiter(BaseAlgorithm):
         self._base_rate = limit / window  # requests per second at nominal load
         self._max_burst = int(limit * burst_multiplier)
         self._refill_rate = self._max_burst / window
+        # Cache for _effective_burst: key -> (burst_value, computed_at)
+        self._burst_cache: dict[str, tuple[int, float]] = {}
+        self._burst_cache_ttl = min(1.0, window / 10)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -115,7 +120,11 @@ class AdaptiveRateLimiter(BaseAlgorithm):
         return f"{self.key_prefix}__global__:aw:load"
 
     def _effective_burst(self, key: str, now: float) -> int:
-        """Compute the burst cap adjusted for current load."""
+        """Compute the burst cap adjusted for current load, with TTL cache."""
+        cached = self._burst_cache.get(key)
+        if cached is not None and (now - cached[1]) < self._burst_cache_ttl:
+            return cached[0]
+
         load_key = self._load_key(key)
         window_start = now - self.adaptive_window
         self.backend.zremrangebyscore(load_key, 0, window_start)
@@ -137,7 +146,9 @@ class AdaptiveRateLimiter(BaseAlgorithm):
             t = (measured_rate - low_threshold) / span
             factor = 1.0 - (self.penalty * t)
 
-        return max(1, int(self._max_burst * factor))
+        result = max(1, int(self._max_burst * factor))
+        self._burst_cache[key] = (result, now)
+        return result
 
     # ------------------------------------------------------------------
     # BaseAlgorithm
@@ -195,11 +206,11 @@ class AdaptiveRateLimiter(BaseAlgorithm):
             tokens -= cost
             # Record in sliding window
             for _ in range(cost):
-                self.backend.zadd(sw_key, now, f"{now}:{uuid.uuid4().hex}")
+                self.backend.zadd(sw_key, now, f"{now}:{next(_counter)}")
             self.backend.expire(sw_key, self.window + 1)
 
             # Record in global load sensor
-            self.backend.zadd(load_key, now, f"{now}:{uuid.uuid4().hex}")
+            self.backend.zadd(load_key, now, f"{now}:{next(_counter)}")
             self.backend.expire(load_key, self.adaptive_window + 1)
 
         self.backend.set(

@@ -7,10 +7,13 @@ when the process exits.  For multi-process deployments use Redis or SQLite.
 
 from __future__ import annotations
 
+import bisect
 import threading
 import time
 from collections import defaultdict
 from typing import Any, Optional
+
+_MAX_MEMBER = "\xff"  # sentinel larger than any real member string
 
 from .base import BaseBackend
 
@@ -39,8 +42,10 @@ class MemoryBackend(BaseBackend):
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._store: dict[str, _Entry] = {}
-        # sorted sets: key -> list of (score, member)
+        # sorted sets: key -> list of (score, member), kept sorted by (score, member)
         self._zsets: dict[str, list[tuple[float, str]]] = defaultdict(list)
+        # member lookup: key -> {member: score} for O(1) existence check in zadd
+        self._zmembers: dict[str, dict[str, float]] = defaultdict(dict)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -73,6 +78,7 @@ class MemoryBackend(BaseBackend):
         with self._lock:
             self._store.pop(key, None)
             self._zsets.pop(key, None)
+            self._zmembers.pop(key, None)
 
     def incr(self, key: str, amount: int = 1) -> int:
         with self._lock:
@@ -96,16 +102,30 @@ class MemoryBackend(BaseBackend):
     def zadd(self, key: str, score: float, member: str) -> None:
         with self._lock:
             zset = self._zsets[key]
-            # Replace existing member
-            self._zsets[key] = [(s, m) for s, m in zset if m != member]
-            self._zsets[key].append((score, member))
+            members = self._zmembers[key]
+            old_score = members.get(member)
+            if old_score is not None:
+                # Remove the stale entry at its old position (O(log N) find + O(N) shift)
+                lo = bisect.bisect_left(zset, (old_score, member))
+                hi = bisect.bisect_right(zset, (old_score, member))
+                for i in range(lo, hi):
+                    if zset[i][1] == member:
+                        del zset[i]
+                        break
+            bisect.insort(zset, (score, member))
+            members[member] = score
 
     def zremrangebyscore(self, key: str, min_score: float, max_score: float) -> int:
         with self._lock:
-            before = self._zsets[key]
-            after = [(s, m) for s, m in before if not (min_score <= s <= max_score)]
-            removed = len(before) - len(after)
-            self._zsets[key] = after
+            zset = self._zsets[key]
+            lo = bisect.bisect_left(zset, (min_score,))
+            hi = bisect.bisect_right(zset, (max_score, _MAX_MEMBER))
+            removed = hi - lo
+            if removed:
+                members = self._zmembers[key]
+                for _, m in zset[lo:hi]:
+                    del members[m]
+                del zset[lo:hi]
             return removed
 
     def zcard(self, key: str) -> int:
@@ -116,11 +136,10 @@ class MemoryBackend(BaseBackend):
         self, key: str, min_score: float, max_score: float
     ) -> list[tuple[str, float]]:
         with self._lock:
-            return [
-                (m, s)
-                for s, m in self._zsets[key]
-                if min_score <= s <= max_score
-            ]
+            zset = self._zsets[key]
+            lo = bisect.bisect_left(zset, (min_score,))
+            hi = bisect.bisect_right(zset, (max_score, _MAX_MEMBER))
+            return [(m, s) for s, m in zset[lo:hi]]
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -130,6 +149,7 @@ class MemoryBackend(BaseBackend):
         with self._lock:
             self._store.clear()
             self._zsets.clear()
+            self._zmembers.clear()
 
     def clear(self) -> None:
         """Remove all keys — useful in tests."""
