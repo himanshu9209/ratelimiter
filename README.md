@@ -1,84 +1,217 @@
 # smart-ratelimiter
 
 <p align="center">
-  <a href="https://pypi.org/project/smart-ratelimiter/"><img alt="PyPI" src="https://img.shields.io/pypi/v/ratelimiter.svg?color=blue"></a>
-  <a href="https://pypi.org/project/ratelimiter/"><img alt="Python" src="https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue"></a>
+  <a href="https://pypi.org/project/smart-ratelimiter/"><img alt="PyPI" src="https://img.shields.io/pypi/v/smart-ratelimiter.svg?color=blue"></a>
+  <a href="https://pypi.org/project/smart-ratelimiter/"><img alt="Python" src="https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue"></a>
   <a href="https://opensource.org/licenses/MIT"><img alt="License" src="https://img.shields.io/badge/License-MIT-green.svg"></a>
- <a href="https://github.com/himanshu9209/ratelimiter/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/himanshu9209/ratelimiter/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/himanshu9209/ratelimiter/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/himanshu9209/ratelimiter/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="Zero dependencies" src="https://img.shields.io/badge/dependencies-zero-brightgreen">
   <img alt="Typed" src="https://img.shields.io/badge/types-mypy%20strict-blue">
 </p>
 
 <p align="center">
-  <b>The Python rate limiter that auto-tunes itself under load.</b><br>
-  Combines a sliding window, token bucket, and real-time load sensor into one algorithm<br>
-  that tightens when traffic spikes and relaxes when it drops.<br>
-  <i>Static rate limiters guess. This one learns.</i><br><br>
-  Zero dependencies. Six algorithms. Three backends. One consistent API.
+  <b>The only Python rate limiter that tightens itself under load — and relaxes when traffic drops.</b><br><br>
+  A three-layer hybrid algorithm (sliding window + token bucket + global load sensor)<br>
+  that adapts its burst cap in real time without any config change or restart.<br><br>
+  Zero dependencies &nbsp;·&nbsp; Six algorithms &nbsp;·&nbsp; Three backends &nbsp;·&nbsp; One consistent API
 </p>
 
 ---
 
-## Why smart-ratelimiter?
+## The problem no static rate limiter solves
 
-Most rate-limiting libraries give you one algorithm and one backend. **smart-ratelimiter** gives you six algorithms to choose from (including an adaptive hybrid that auto-tunes itself), three pluggable backends, and a uniform API that works everywhere — from a simple `@rate_limit` decorator to production FastAPI or Flask middleware.
+Every rate limiter lets you set a number. The problem: **the right number under normal traffic is the wrong number during a spike.**
 
-- **Pick the right algorithm** — not just the one the library happened to implement
-- **Swap backends without touching your logic** — in-memory for dev, Redis for prod
-- **Observe what's happening** — per-key metrics track allowed vs. dropped requests in real time
-- **Change limits at runtime** — no restart needed thanks to `DynamicConfig`
-- **Identify clients precisely** — built-in helpers for `X-Forwarded-For`, API keys, and composite keys
+```
+Normal traffic:   50 req/s  →  limit=100/min feels generous, users happy
+Traffic spike:   500 req/s  →  limit=100/min gets overwhelmed, OR
+                              you set it so low that legitimate traffic suffers
+```
+
+You cannot tune your way out of this. The spike you're protecting against and the normal load you want to permit are different situations — a static ceiling is a tradeoff, not a solution.
+
+**`AdaptiveRateLimiter` solves this directly.** Under low load, it offers a generous burst allowance. Under high load, it tightens automatically. When traffic drops, it relaxes again. No intervention required.
 
 ---
 
-## The problem with static rate limiting
+## How AdaptiveRateLimiter actually works
 
-Most rate limiters assume traffic is predictable. It isn’t.
+Three layers run on every `is_allowed()` call:
 
-A fixed ceiling either throttles too aggressively under normal load, or fails to protect under a spike — there is no static value that is right for both situations.
-
-```python
-# Static limiter: ceiling never moves regardless of traffic shape
-limiter = FixedWindowRateLimiter(backend, limit=100, window=60)
-# Traffic spike at 300 req/s → 200 requests dropped, or backend overloads
-
-# Adaptive limiter: burst cap shrinks under load, restores when traffic drops
-limiter = AdaptiveRateLimiter(backend, limit=100, window=60, burst_multiplier=3)
-# Traffic spike at 300 req/s → burst cap tightens automatically, stability maintained
+```
+Request arrives
+      |
+      v
++--------------------------------------------------+
+|  Layer 0: Global Load Sensor                     |
+|                                                  |
+|  Reads a shared sorted set written to by ALL     |
+|  callers on this limiter instance.               |
+|  Computes: measured_rate = requests / adap_window|
+|                                                  |
+|  Low load  (<40% of base rate) -> full burst cap |
+|  High load (>80% of base rate) -> burst cap x0.5 |
+|  In between -> linearly interpolated             |
+|                                                  |
+|  Result cached for ~0.1-1s to avoid hot-path I/O |
++---------------------+----------------------------+
+                      |  effective_burst computed
+                      v
++--------------------------------------------------+
+|  Layer 1: Sliding Window Hard Ceiling            |
+|                                                  |
+|  Counts exact requests in the last `window` sec. |
+|  Rejects if: sw_count + cost > effective_burst   |
+|                                                  |
+|  Prevents boundary-burst exploitation that       |
+|  breaks token bucket and fixed-window limiters.  |
++---------------------+----------------------------+
+                      |  exact count verified
+                      v
++--------------------------------------------------+
+|  Layer 2: Token Bucket                           |
+|                                                  |
+|  Tokens refill at effective_burst / window per s |
+|  Rejects if: tokens < cost                       |
+|                                                  |
+|  Enforces the sustained average rate and allows  |
+|  smooth bursts up to the current burst cap.      |
++---------------------+----------------------------+
+                      |  allowed
+                      v
+           Record in sliding window +
+           Record in global load sensor
 ```
 
-**Who is this for?**
+**Why three layers?**
+- Token bucket alone: attackable at window boundaries, no system-level awareness
+- Sliding window alone: no burst tolerance, binary accept/reject
+- Load sensor alone: reacts to aggregate load but not to individual key abuse
+- All three together: burst-tolerant, boundary-safe, and system-aware
 
-- Backend engineers handling burst or unpredictable traffic
-- API developers who are tired of manually tuning rate limits
-- System designers who want the limiter to absorb spikes without babysitting it
+**The global load sensor is the novel part.** Every allowed request from every caller writes to the same sorted set. The burst cap is *global* — heavy traffic from one tenant tightens the burst cap for everyone on the same limiter. This is intentional: the goal is system stability, not per-tenant fairness. (For per-tenant isolation, create one `AdaptiveRateLimiter` per tenant.)
 
-## Table of Contents
+---
 
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Algorithms](#algorithms)
-  - [Which algorithm should I use?](#which-algorithm-should-i-use)
-  - [★ Adaptive Hybrid (Flagship)](#-adaptive-hybrid-flagship)
-  - [Fixed Window](#fixed-window)
-  - [Sliding Window Log](#sliding-window-log)
-  - [Sliding Window Counter](#sliding-window-counter)
-  - [Token Bucket](#token-bucket)
-  - [Leaky Bucket](#leaky-bucket)
-  - [Comparison table](#algorithm-comparison)
-- [Backends](#backends)
-- [Decorator API](#decorator-api)
-- [Context Manager](#context-manager)
-- [Middleware](#middleware)
-  - [WSGI (Flask / Django)](#wsgi-middleware)
-  - [ASGI (FastAPI / Starlette)](#asgi-middleware)
-- [Client Identification](#client-identification)
-- [Dynamic Configuration](#dynamic-configuration)
-- [Observability & Metrics](#observability--metrics)
-- [RateLimitResult reference](#ratelimitresult-reference)
-- [Custom Backends](#custom-backends)
-- [Benchmarks](#benchmarks)
-- [Development](#development)
+## Quick Start
+
+```python
+from smart_ratelimiter import AdaptiveRateLimiter, MemoryBackend
+
+limiter = AdaptiveRateLimiter(
+    backend=MemoryBackend(),
+    limit=100,            # hard ceiling: 100 req per window
+    window=60.0,          # base window in seconds
+    burst_multiplier=3,   # up to 300 burst tokens when quiet
+)
+
+result = limiter.is_allowed("user:42")
+if result.allowed:
+    print(f"{result.remaining} requests left")
+else:
+    print(f"Rate limited — retry in {result.retry_after:.1f}s")
+```
+
+Protect any function with one decorator:
+
+```python
+from smart_ratelimiter import AdaptiveRateLimiter, MemoryBackend, rate_limit
+
+limiter = AdaptiveRateLimiter(MemoryBackend(), limit=100, window=60, burst_multiplier=3)
+
+@rate_limit(limiter, key_func=lambda user_id, **_: f"user:{user_id}")
+def call_llm_api(user_id: int, prompt: str) -> str:
+    ...  # auto-throttles under load, opens up when quiet
+```
+
+---
+
+## AdaptiveRateLimiter — full configuration
+
+```python
+from smart_ratelimiter import AdaptiveRateLimiter, MemoryBackend
+
+limiter = AdaptiveRateLimiter(
+    backend=MemoryBackend(),
+    limit=100,                # hard ceiling per window
+    window=60.0,              # base window in seconds
+    burst_multiplier=3,       # burst cap = limit x multiplier when quiet
+    adaptive_window=300,      # measure load over the last 5 minutes
+    high_load_threshold=0.8,  # tighten when traffic > 80% of base rate
+    low_load_threshold=0.4,   # relax when traffic < 40% of base rate
+    penalty=0.5,              # shrink burst cap by 50% under high load
+)
+
+result = limiter.is_allowed("tenant:acme")
+
+# Every result carries full diagnostic metadata
+print(result.metadata)
+# {
+#   'layer': 'token_bucket',    <- which layer made the decision
+#   'tokens': 299.0,            <- token bucket level right now
+#   'effective_burst': 300,     <- current burst cap (drops under load)
+#   'refill_rate': 5.0,         <- tokens/sec being restored
+#   'sw_count': 1               <- exact requests in current window
+# }
+```
+
+**What each parameter does:**
+
+| Parameter | Default | Effect |
+|---|---|---|
+| `limit` | required | Hard ceiling that never moves — the absolute maximum per `window` |
+| `window` | required | Time window in seconds |
+| `burst_multiplier` | `2` | Burst cap = `limit × multiplier` during quiet periods |
+| `adaptive_window` | `window × 5` | How far back to look when measuring load |
+| `high_load_threshold` | `0.8` | Fraction of base rate at which burst cap starts shrinking |
+| `low_load_threshold` | `0.4` | Fraction at which burst cap is fully restored |
+| `penalty` | `0.5` | How much to cut the burst cap under high load (0 = no cut, 1 = full cut) |
+
+---
+
+## Real-world scenarios
+
+### Multi-tenant API
+
+```python
+# One limiter for all tenants — global load sensor provides system-level protection
+limiter = AdaptiveRateLimiter(MemoryBackend(), limit=1000, window=60, burst_multiplier=2)
+
+# Each tenant gets its own sliding-window + token-bucket state
+result = limiter.is_allowed(f"tenant:{tenant_id}")
+
+# During a spike from ANY tenant, burst caps tighten for everyone
+# -> system stays stable without per-tenant manual limits
+```
+
+### LLM / expensive downstream calls
+
+```python
+# Generous burst when the inference queue is short,
+# aggressive throttling when it fills up
+limiter = AdaptiveRateLimiter(
+    MemoryBackend(),
+    limit=60,           # 1 req/s average
+    window=60,
+    burst_multiplier=5, # allow up to 5 req/s burst when quiet
+    penalty=0.8,        # cut to 1 req/s burst during high load
+)
+```
+
+### Distributed (Redis) public endpoint
+
+```python
+import redis
+from smart_ratelimiter import AdaptiveRateLimiter
+from smart_ratelimiter.backends.redis_backend import RedisBackend
+
+# Shared Redis -> rate limiting works across all app instances
+client = redis.Redis(host="redis", decode_responses=True)
+limiter = AdaptiveRateLimiter(
+    RedisBackend(client, key_prefix="api:"),
+    limit=100, window=60, burst_multiplier=3,
+)
+```
 
 ---
 
@@ -91,263 +224,130 @@ pip install smart-ratelimiter
 # With Redis backend
 pip install smart-ratelimiter[redis]
 
-# Development tools (pytest, mypy, ruff, fakeredis)
+# Development tools (pytest, mypy, ruff, fakeredis, hypothesis)
 pip install smart-ratelimiter[dev]
 ```
 
 ---
 
-## Quick Start
+## All six algorithms
 
-```python
-from ratelimiter import AdaptiveRateLimiter, MemoryBackend
-
-limiter = AdaptiveRateLimiter(
-    backend=MemoryBackend(),
-    limit=100,            # hard ceiling per window
-    window=60.0,          # base window in seconds
-    burst_multiplier=3,   # allow up to 300 burst tokens when quiet
-)
-
-result = limiter.is_allowed("user:42")
-if result.allowed:
-    print(f"{result.remaining} requests left this minute")
-else:
-    print(f"Rate limited — retry in {result.retry_after:.1f}s")
-```
-
-Or protect any function with one decorator:
-
-```python
-from ratelimiter import AdaptiveRateLimiter, MemoryBackend, rate_limit
-
-limiter = AdaptiveRateLimiter(MemoryBackend(), limit=10, window=1)
-
-@rate_limit(limiter, key_func=lambda user_id, **_: f"user:{user_id}")
-def send_email(user_id: int, to: str) -> None:
-    ...  # called at most 10 times/s per user, auto-throttles under load
-```
-
----
-
-## Algorithms
-
-### Which algorithm should I use?
+### Which one should I use?
 
 ```
-Unpredictable or bursty traffic? Multi-tenant API? Don't want to tune limits?
-    → Adaptive Hybrid  ★ (auto-tightens under load, relaxes when quiet)
+Is your traffic unpredictable, bursty, or multi-tenant?
+    -> AdaptiveRateLimiter (*)  (auto-tightens under load, relaxes when quiet)
 
-Need to allow short bursts?
-├── Yes → Is memory per key a concern?
-│         ├── No  → Token Bucket  (accurate, elegant burst handling)
-│         └── Yes → Sliding Window Counter  (O(1) memory, ~99% accurate)
-└── No  → Need perfectly smooth output?
-          ├── Yes → Leaky Bucket  (constant drip, no bursts at all)
-          └── No  → Need boundary-burst protection?
-                    ├── Yes → Sliding Window Log  (exact, higher memory)
-                    └── No  → Fixed Window  (cheapest, simplest)
+Do you need burst tolerance (handle spikes without immediate rejection)?
++-- Yes -> Is per-key memory a concern at high scale?
+|         +-- No  -> TokenBucketRateLimiter          (cleanest burst handling)
+|         +-- Yes -> SlidingWindowCounterRateLimiter  (O(1) memory, 99% accurate)
++-- No  -> Do you need perfectly smooth output (no bursts at all)?
+          +-- Yes -> LeakyBucketRateLimiter           (constant drip rate)
+          +-- No  -> Do you need exact counts with no boundary exploit?
+                    +-- Yes -> SlidingWindowRateLimiter   (exact, higher memory)
+                    +-- No  -> FixedWindowRateLimiter     (cheapest, simplest)
 ```
 
----
+### Algorithm comparison
 
-### ★ Adaptive Hybrid (Flagship)
-
-The core of smart-ratelimiter. Three layers work together so the limiter responds to real traffic instead of a static number you guessed upfront:
-
-| Layer | What it does |
-|---|---|
-| **Sliding window guard** | Hard ceiling at the current burst cap — prevents boundary exploitation |
-| **Token bucket** | Refills at `limit / window` tokens/s — enforces the sustained average rate |
-| **Load sensor** | Tracks request rate over `adaptive_window`; shrinks the burst cap under high load and restores it when traffic drops |
-
-Under low load, callers enjoy a generous burst allowance. Under high load, the limiter automatically becomes stricter — no manual tuning, no config change, no restart.
-
-```python
-from ratelimiter import AdaptiveRateLimiter, MemoryBackend
-
-limiter = AdaptiveRateLimiter(
-    backend=MemoryBackend(),
-    limit=100,                # hard ceiling: 100 req per window
-    window=60.0,              # base window in seconds
-    burst_multiplier=3,       # up to 300 burst tokens when quiet
-    adaptive_window=300,      # measure load over the last 5 minutes
-    high_load_threshold=0.8,  # tighten when traffic > 80% of base rate
-    low_load_threshold=0.4,   # relax when traffic < 40% of base rate
-    penalty=0.5,              # cut burst cap by 50% under high load
-)
-result = limiter.is_allowed("tenant:acme")
-print(result.metadata)
-# {'layer': 'token_bucket', 'tokens': 299.0, 'effective_burst': 300,
-#  'refill_rate': 5.0, 'sw_count': 1}
-```
-
-> **Best for:** Multi-tenant APIs, public endpoints, or any service where traffic is unpredictable and you want automatic protection without manual tuning.
-
----
-
-### Fixed Window
-
-Divides time into fixed, non-overlapping buckets. One `INCR` per request — the cheapest algorithm available.
-
-```python
-from ratelimiter import FixedWindowRateLimiter, MemoryBackend
-
-limiter = FixedWindowRateLimiter(MemoryBackend(), limit=100, window=60)
-result = limiter.is_allowed("user:42")
-```
-
-> **Trade-off:** A client can exploit the boundary to fire 2× the limit by sending `limit` requests just before the window rolls and `limit` more immediately after.
-
----
-
-### Sliding Window Log
-
-Stores a timestamped log of every request in the window. No boundary burst possible.
-
-```python
-from ratelimiter import SlidingWindowRateLimiter, MemoryBackend
-
-limiter = SlidingWindowRateLimiter(MemoryBackend(), limit=100, window=60)
-result = limiter.is_allowed("192.168.1.1")
-```
-
-> **Trade-off:** O(N) memory per key (N = limit). Best when you need exact counts and can afford the storage.
-
----
-
-### Sliding Window Counter
-
-A memory-efficient alternative to the log. Blends two adjacent fixed-window counters using a weighted approximation — O(1) memory, ~98–99% accuracy, no boundary burst.
-
-```python
-from ratelimiter import SlidingWindowCounterRateLimiter, MemoryBackend
-
-limiter = SlidingWindowCounterRateLimiter(MemoryBackend(), limit=100, window=60)
-result = limiter.is_allowed("user:42")
-
-# Extra metadata for observability
-print(result.metadata)
-# {'curr_count': 12, 'prev_count': 45, 'effective_count': 34.5, 'weight_prev': 0.5}
-```
-
-> **Trade-off:** Slightly approximate (bounded error) but uses constant memory regardless of traffic volume. Ideal for high-traffic services where the log's O(N) cost is prohibitive.
-
----
-
-### Token Bucket
-
-A bucket holds up to `limit` tokens that refill at a constant rate. Bursts are absorbed up to the bucket capacity; sustained rate is enforced by the refill speed.
-
-```python
-from ratelimiter import TokenBucketRateLimiter, MemoryBackend
-
-# Bucket holds 200 tokens; refills at 50 tokens/s independent of window
-limiter = TokenBucketRateLimiter(
-    MemoryBackend(), limit=200, window=60, refill_rate=50
-)
-result = limiter.is_allowed("api_key:abc")
-```
-
-> **Trade-off:** Excellent burst handling, but no hard boundary protection — a persistent attacker at exactly the refill rate is never rejected.
-
----
-
-### Leaky Bucket
-
-Requests fill a bucket that drains at a constant leak rate. Enforces a perfectly smooth throughput regardless of incoming burst shape.
-
-```python
-from ratelimiter import LeakyBucketRateLimiter, MemoryBackend
-
-limiter = LeakyBucketRateLimiter(MemoryBackend(), limit=100, window=10)
-result = limiter.is_allowed("user:7")
-```
-
-> **Trade-off:** Zero burst tolerance once the bucket is full. Good for protecting downstream systems that can't handle spikes at all.
-
----
-
-### Algorithm Comparison
-
-| Algorithm | Burst Support | Boundary Safe | Memory | State |
-|-----------|:---:|:---:|:---:|---|
-| **★ Adaptive Hybrid** | ✅ | ✅ | O(N) | sorted set + token state + load sensor |
-| Fixed Window | ❌ | ❌ | O(1) | 1 counter |
-| Sliding Window Log | ❌ | ✅ | O(N) | sorted timestamp set |
-| Sliding Window Counter | ❌ | ✅ | **O(1)** | 2 counters |
-| Token Bucket | ✅ | ❌ | O(1) | float + timestamp |
-| Leaky Bucket | ❌ | ✅ | O(1) | float + timestamp |
+| Algorithm | Auto-tunes | Burst | Boundary-safe | Memory |
+|---|:---:|:---:|:---:|:---:|
+| **(*) AdaptiveRateLimiter** | ✅ | ✅ | ✅ | O(N) |
+| FixedWindowRateLimiter | ❌ | ❌ | ❌ | O(1) |
+| SlidingWindowRateLimiter | ❌ | ❌ | ✅ | O(N) |
+| SlidingWindowCounterRateLimiter | ❌ | ❌ | ✅ | **O(1)** |
+| TokenBucketRateLimiter | ❌ | ✅ | ❌ | O(1) |
+| LeakyBucketRateLimiter | ❌ | ❌ | ✅ | O(1) |
 
 ---
 
 ## Backends
 
-All backends implement the same `BaseBackend` interface. Swap one for another with a single line change.
+All backends implement the same interface. One line change to switch from dev to prod.
 
-### In-Memory
-
-Thread-safe. State lives in-process and is lost on restart. Perfect for single-process apps and testing.
+| Backend | Use case | Extra deps |
+|---|---|---|
+| `MemoryBackend` | Single-process, dev, testing | None |
+| `SQLiteBackend` | Persistent, single-host | None |
+| `RedisBackend` | Distributed, multi-host | `pip install smart-ratelimiter[redis]` |
 
 ```python
-from ratelimiter import MemoryBackend
-
+# Dev
+from smart_ratelimiter import MemoryBackend
 backend = MemoryBackend()
-```
 
-### Redis (distributed)
-
-Requires `pip install smart-ratelimiter[redis]`. Share rate-limit state across multiple processes or hosts.
-
-```python
+# Prod (same limiter code, different backend)
 import redis
-from ratelimiter.backends.redis_backend import RedisBackend
-
-client = redis.Redis(host="localhost", port=6379, decode_responses=True)
-backend = RedisBackend(client=client, key_prefix="myapp:")
+from smart_ratelimiter.backends.redis_backend import RedisBackend
+backend = RedisBackend(redis.Redis(host="redis", decode_responses=True))
 ```
 
-### SQLite (persistent, single-host)
+---
 
-Zero extra dependencies. Persists across restarts. Uses WAL mode for safe concurrent access.
+## Middleware
+
+### WSGI (Flask / Django)
 
 ```python
-from ratelimiter import SQLiteBackend
+from flask import Flask
+from smart_ratelimiter import AdaptiveRateLimiter, MemoryBackend
+from smart_ratelimiter.middleware import RateLimitMiddleware
+from smart_ratelimiter.key_funcs import wsgi_api_key_func
 
-backend = SQLiteBackend(db_path="/var/lib/myapp/ratelimiter.db")
+app = Flask(__name__)
+limiter = AdaptiveRateLimiter(MemoryBackend(), limit=60, window=60, burst_multiplier=3)
+
+app.wsgi_app = RateLimitMiddleware(
+    app.wsgi_app,
+    limiter=limiter,
+    key_func=wsgi_api_key_func("X-API-Key"),  # API key, fallback to IP
+)
+# Allowed:  injects X-RateLimit-Limit / Remaining / Reset headers
+# Rejected: returns HTTP 429 with Retry-After header
 ```
+
+### ASGI (FastAPI / Starlette)
+
+```python
+from fastapi import FastAPI
+from smart_ratelimiter import AdaptiveRateLimiter, MemoryBackend
+from smart_ratelimiter.middleware import AsyncRateLimitMiddleware
+from smart_ratelimiter.key_funcs import asgi_api_key_func
+
+app = FastAPI()
+limiter = AdaptiveRateLimiter(MemoryBackend(), limit=100, window=60, burst_multiplier=3)
+
+app.add_middleware(
+    AsyncRateLimitMiddleware,
+    limiter=limiter,
+    key_func=asgi_api_key_func("X-API-Key"),
+)
+```
+
+See [`examples/fastapi_example.py`](examples/fastapi_example.py) and [`examples/flask_example.py`](examples/flask_example.py) for complete patterns including per-endpoint limits and dependency injection.
 
 ---
 
 ## Decorator API
 
 ```python
-from ratelimiter import TokenBucketRateLimiter, MemoryBackend, rate_limit
+from smart_ratelimiter import TokenBucketRateLimiter, MemoryBackend, rate_limit
 
 limiter = TokenBucketRateLimiter(MemoryBackend(), limit=10, window=1)
 
-# Shared key across all callers
-@rate_limit(limiter)
-def send_notification() -> None: ...
-
-# Per-caller key derived from arguments
 @rate_limit(limiter, key_func=lambda user_id, **_: f"user:{user_id}")
 def get_profile(user_id: int) -> dict: ...
 
-# Request costs more than 1 token (e.g. bulk operations)
-@rate_limit(limiter, cost=5)
+@rate_limit(limiter, cost=5)           # bulk ops cost more tokens
 def bulk_export() -> None: ...
 
-# Return None on limit instead of raising
-@rate_limit(limiter, raise_on_limit=False)
-def best_effort() -> str | None:
-    return "data"
+@rate_limit(limiter, raise_on_limit=False)   # return None instead of raising
+def best_effort() -> str | None: ...
 ```
 
-When `raise_on_limit=True` (default), `RateLimitExceeded` is raised:
-
 ```python
-from ratelimiter import RateLimitExceeded
+from smart_ratelimiter import RateLimitExceeded
 
 try:
     get_profile(user_id=42)
@@ -360,68 +360,81 @@ except RateLimitExceeded as exc:
 ## Context Manager
 
 ```python
-from ratelimiter import RateLimitContext, RateLimitExceeded
+from smart_ratelimiter import RateLimitContext, RateLimitExceeded
 
 with RateLimitContext(limiter, key=f"user:{user_id}"):
-    do_work()   # RateLimitExceeded raised on __enter__ if over limit
+    do_work()  # RateLimitExceeded raised on __enter__ if over limit
 ```
 
 ---
 
-## Middleware
+## Dynamic Configuration
 
-### WSGI Middleware
-
-Drop-in for Flask, Django, or any PEP 3333 application.
+Change limits at runtime without restarting:
 
 ```python
-from flask import Flask
-from ratelimiter import SlidingWindowRateLimiter, MemoryBackend
-from ratelimiter.middleware import RateLimitMiddleware
-from ratelimiter.key_funcs import wsgi_api_key_func
+from smart_ratelimiter import DynamicConfig, AdaptiveRateLimiter, MemoryBackend
 
-app = Flask(__name__)
-limiter = SlidingWindowRateLimiter(MemoryBackend(), limit=60, window=60)
+cfg = DynamicConfig(limit=100, window=60)
+limiter = AdaptiveRateLimiter(MemoryBackend(), limit=100, window=60, config_provider=cfg)
 
-app.wsgi_app = RateLimitMiddleware(
-    app.wsgi_app,
-    limiter=limiter,
-    key_func=wsgi_api_key_func("X-API-Key"),  # API key, fallback to IP
-)
+# From an admin endpoint, feature flag, or config reload:
+cfg.update(limit=50)   # effective on the next is_allowed() call
 ```
 
-Rejected requests receive HTTP 429 with `Retry-After` header. Allowed requests get `X-RateLimit-*` headers automatically injected.
-
-### ASGI Middleware
-
-Drop-in for FastAPI, Starlette, or any ASGI application.
+Implement the `ConfigProvider` protocol to pull limits from any source:
 
 ```python
-from fastapi import FastAPI
-from ratelimiter import AdaptiveRateLimiter, MemoryBackend
-from ratelimiter.middleware import AsyncRateLimitMiddleware
-from ratelimiter.key_funcs import asgi_api_key_func
+from smart_ratelimiter.config import ConfigProvider
 
-app = FastAPI()
-limiter = AdaptiveRateLimiter(MemoryBackend(), limit=100, window=60)
+class FeatureFlagConfig:
+    def get_limit(self) -> int:
+        return feature_flags.get("api_rate_limit", default=100)
 
-app.add_middleware(
-    AsyncRateLimitMiddleware,
-    limiter=limiter,
-    key_func=asgi_api_key_func("X-API-Key"),
-)
+    def get_window(self) -> float:
+        return 60.0
 ```
 
-See [`examples/flask_example.py`](examples/flask_example.py) and [`examples/fastapi_example.py`](examples/fastapi_example.py) for complete integration patterns including per-endpoint limits and dependency injection.
+---
+
+## Observability & Metrics
+
+```python
+from smart_ratelimiter import (
+    AdaptiveRateLimiter, MemoryBackend,
+    InMemoryMetricsCollector, ObservableRateLimiter,
+)
+
+metrics = InMemoryMetricsCollector()
+limiter = ObservableRateLimiter(
+    AdaptiveRateLimiter(MemoryBackend(), limit=100, window=60),
+    metrics,
+)
+
+for _ in range(15):
+    limiter.is_allowed("user:42")
+
+print(metrics.get_stats("user:42"))
+# {'key': 'user:42', 'allowed': 10, 'dropped': 5, 'total': 15, 'drop_rate': 0.333}
+```
+
+Push to Prometheus, StatsD, or any system by subclassing `MetricsCollector`:
+
+```python
+from smart_ratelimiter.metrics import MetricsCollector
+
+class PrometheusCollector(MetricsCollector):
+    def record(self, key: str, result) -> None:
+        counter = REQUESTS_ALLOWED if result.allowed else REQUESTS_DROPPED
+        counter.labels(key=key).inc()
+```
 
 ---
 
 ## Client Identification
 
-Built-in helpers make it easy to identify clients by IP or API key — for both WSGI and ASGI middleware.
-
 ```python
-from ratelimiter.key_funcs import (
+from smart_ratelimiter.key_funcs import (
     wsgi_ip_func, wsgi_api_key_func, wsgi_composite_key_func,
     asgi_ip_func, asgi_api_key_func, asgi_composite_key_func,
 )
@@ -438,142 +451,42 @@ key_func = wsgi_composite_key_func(
     wsgi_api_key_func("X-API-Key"),
     separator="|",
 )
-
-# Same helpers available for ASGI scopes
-key_func = asgi_api_key_func("Authorization")
 ```
 
 > **Security note:** Only trust `X-Forwarded-For` when your proxy strips or overwrites it — otherwise clients can spoof their IP.
 
 ---
 
-## Dynamic Configuration
-
-Change rate limits at runtime without restarting your service.
-
-```python
-from ratelimiter import DynamicConfig, FixedWindowRateLimiter, MemoryBackend
-
-# Create a shared config object
-cfg = DynamicConfig(limit=100, window=60)
-
-# Attach it to one or more limiters
-limiter = FixedWindowRateLimiter(
-    MemoryBackend(), limit=100, window=60, config_provider=cfg
-)
-
-# Later — from an admin endpoint, config reload, feature flag, etc.
-cfg.update(limit=50)   # effective immediately on the next is_allowed() call
-cfg.update(window=30)  # or update both at once: cfg.update(limit=50, window=30)
-```
-
-`DynamicConfig` is thread-safe. Every algorithm (`FixedWindow`, `SlidingWindow`, `SlidingWindowCounter`, `TokenBucket`, `LeakyBucket`, `Adaptive`) accepts a `config_provider=` argument.
-
-You can also implement the `ConfigProvider` protocol yourself — any object with `get_limit() -> int` and `get_window() -> float` qualifies:
-
-```python
-from ratelimiter.config import ConfigProvider
-
-class FeatureFlagConfig:
-    """Pull limits from your feature-flag service."""
-
-    def get_limit(self) -> int:
-        return feature_flags.get("api_rate_limit", default=100)
-
-    def get_window(self) -> float:
-        return 60.0
-```
-
----
-
-## Observability & Metrics
-
-Track how many requests are allowed and dropped per client — essential for SRE work and DoS detection.
-
-```python
-from ratelimiter import (
-    SlidingWindowRateLimiter, MemoryBackend,
-    InMemoryMetricsCollector, ObservableRateLimiter,
-)
-
-metrics = InMemoryMetricsCollector()
-
-limiter = ObservableRateLimiter(
-    SlidingWindowRateLimiter(MemoryBackend(), limit=10, window=60),
-    metrics,
-)
-
-# Use limiter normally
-for _ in range(15):
-    limiter.is_allowed("user:42")
-
-# Inspect per-key stats
-print(metrics.get_stats("user:42"))
-# {'key': 'user:42', 'allowed': 10, 'dropped': 5, 'total': 15, 'drop_rate': 0.333}
-
-# Or global stats across all keys
-print(metrics.get_stats())
-# {'allowed': 10, 'dropped': 5, 'total': 15, 'drop_rate': 0.333, 'per_key': {...}}
-```
-
-`ObservableRateLimiter` is a **non-intrusive wrapper** — it does not modify the underlying algorithm and adds negligible overhead.
-
-**Push to Prometheus, StatsD, or any backend** by subclassing `MetricsCollector`:
-
-```python
-from ratelimiter.metrics import MetricsCollector
-from ratelimiter.algorithms.base import RateLimitResult
-
-class PrometheusCollector(MetricsCollector):
-    def record(self, key: str, result: RateLimitResult) -> None:
-        if result.allowed:
-            REQUESTS_ALLOWED.labels(key=key).inc()
-        else:
-            REQUESTS_DROPPED.labels(key=key).inc()
-```
-
----
-
-## RateLimitResult Reference
-
-Every `is_allowed()` call returns a `RateLimitResult`:
+## RateLimitResult reference
 
 ```python
 result = limiter.is_allowed("user:42", cost=1)
 
 result.allowed      # bool  — True if the request is permitted
-result.key          # str   — the key that was checked
-result.limit        # int   — the configured limit
 result.remaining    # int   — requests remaining in this window
-result.reset_after  # float — seconds until the window / quota resets
 result.retry_after  # float — seconds to wait before retrying (0 if allowed)
-result.metadata     # dict  — algorithm-specific data (token count, bucket level, …)
+result.reset_after  # float — seconds until quota resets
 result.headers      # dict  — ready-to-use HTTP response headers
+result.metadata     # dict  — algorithm diagnostics (tokens, layer, burst cap...)
 ```
 
-### HTTP Headers
-
-`result.headers` returns a dict you can inject directly into any HTTP response:
-
-```python
-response.headers.update(result.headers)
-```
+`result.headers` is ready to inject into any HTTP response:
 
 ```
 X-RateLimit-Limit:     100
 X-RateLimit-Remaining: 42
 X-RateLimit-Reset:     37
-Retry-After:           12.50   ← only present when the request is rejected
+Retry-After:           12.50   <- only present when the request is rejected
 ```
 
 ---
 
 ## Custom Backends
 
-Implement `BaseBackend` to connect any storage system — DynamoDB, Memcached, Cassandra, etc.:
+Subclass `BaseBackend` to connect DynamoDB, Memcached, Cassandra, or anything else:
 
 ```python
-from ratelimiter.backends.base import BaseBackend
+from smart_ratelimiter.backends.base import BaseBackend
 from typing import Any, Optional
 
 class MyBackend(BaseBackend):
@@ -583,49 +496,51 @@ class MyBackend(BaseBackend):
     def incr(self, key: str, amount: int = 1) -> int: ...
     def expire(self, key: str, ttl: float) -> None: ...
 
-    # Sorted-set operations (used by Sliding Window Log and Adaptive)
+    # Only needed for SlidingWindow and Adaptive algorithms
     def zadd(self, key: str, score: float, member: str) -> None: ...
     def zremrangebyscore(self, key: str, min_score: float, max_score: float) -> int: ...
     def zcard(self, key: str) -> int: ...
     def zrange_by_score(self, key: str, min_score: float, max_score: float) -> list: ...
 ```
 
-Once implemented, use it with any algorithm:
-
-```python
-backend = MyBackend()
-limiter = AdaptiveRateLimiter(backend, limit=100, window=60)
-```
-
 ---
 
 ## Benchmarks
 
-Measured on Python 3.12 — 5,000 iterations per algorithm after a 500-iteration warmup, effectively-unlimited limit so no requests are rejected.
+5,000 iterations per algorithm, 500-iteration warmup, Python 3.12, effectively-unlimited limit so no requests are rejected.
 
-### In-Memory Backend
+### In-Memory Backend — single-threaded
 
 | Algorithm | ops/sec | mean µs | p50 µs | p95 µs | p99 µs |
 |---|---:|---:|---:|---:|---:|
-| FixedWindow | 117,297 | 8.07 | 7.10 | 12.20 | 30.39 |
-| SlidingWindow | 4,245 | 235.12 | 204.95 | 563.78 | 747.30 |
-| SlidingWindowCounter | 129,097 | 7.50 | 6.90 | 11.90 | 17.00 |
-| TokenBucket | 188,437 | 5.07 | 5.00 | 7.70 | 7.90 |
 | LeakyBucket | 249,237 | 3.85 | 3.80 | 4.00 | 4.30 |
-| Adaptive | 59,526 | 16.55 | 13.70 | 26.70 | 48.50 |
+| TokenBucket | 188,437 | 5.07 | 5.00 | 7.70 | 7.90 |
+| SlidingWindowCounter | 129,097 | 7.50 | 6.90 | 11.90 | 17.00 |
+| FixedWindow | 117,297 | 8.07 | 7.10 | 12.20 | 30.39 |
+| **Adaptive** | **59,526** | **16.55** | **13.70** | **26.70** | **48.50** |
+| SlidingWindow | 4,245 | 235.12 | 204.95 | 563.78 | 747.30 |
 
-### SQLite Backend (WAL mode, `:memory:`)
+**Adaptive at 59k ops/sec is doing 3x the work** of a simple counter: one sorted-set prune + count (sliding window), one sorted-set read (load sensor), one token-bucket get/set — all in ~16µs mean. That's the cost of correctness and self-tuning.
 
-| Algorithm | ops/sec | mean µs | p50 µs | p95 µs | p99 µs |
-|---|---:|---:|---:|---:|---:|
-| FixedWindow | 56,170 | 17.53 | 15.70 | 24.60 | 46.29 |
-| SlidingWindow | 276 | 3,628.17 | 3,310.80 | 8,062.33 | 10,973.37 |
-| SlidingWindowCounter | 31,958 | 30.99 | 27.20 | 47.00 | 79.19 |
-| TokenBucket | 43,335 | 22.83 | 19.80 | 39.80 | 68.89 |
-| LeakyBucket | 39,095 | 25.31 | 23.20 | 38.99 | 89.80 |
-| Adaptive | 4,230 | 235.83 | 221.35 | 450.30 | 600.17 |
+### In-Memory Backend — concurrent (aggregate ops/sec across N threads)
 
-Reproduce with:
+| Algorithm | 1 thread | 2 threads | 4 threads | 8 threads |
+|---|---:|---:|---:|---:|
+| FixedWindow | ~117k | ~190k | ~220k | ~230k |
+| **Adaptive** | **~60k** | **~95k** | **~110k** | **~115k** |
+| SlidingWindow | ~4k | ~6k | ~7k | ~7k |
+
+Scales near-linearly to 2 threads thanks to 16-shard locking in `MemoryBackend`. GIL caps further gains for pure-Python operations.
+
+### SQLite Backend (WAL mode, in-memory)
+
+| Algorithm | ops/sec | mean µs | p99 µs |
+|---|---:|---:|---:|
+| FixedWindow | 56,170 | 17.53 | 46.29 |
+| SlidingWindowCounter | 31,958 | 30.99 | 79.19 |
+| TokenBucket | 43,335 | 22.83 | 68.89 |
+| LeakyBucket | 39,095 | 25.31 | 89.80 |
+| Adaptive | 4,230 | 235.83 | 600.17 |
 
 ```bash
 PYTHONPATH=src python benchmark.py
@@ -636,21 +551,16 @@ PYTHONPATH=src python benchmark.py
 ## Development
 
 ```bash
-git clone https://github.com/himanshu9209/smart-ratelimiter
-cd smart-ratelimiter
+git clone https://github.com/himanshu9209/ratelimiter
+cd ratelimiter
 pip install -e ".[dev]"
 
-# Run tests
-pytest --cov=ratelimiter --cov-report=term-missing
-
-# Type check
+pytest --cov=smart_ratelimiter --cov-report=term-missing   # 226 tests
 mypy src/
-
-# Lint
 ruff check src/
 ```
 
-The test suite covers all six algorithms, all three backends, middleware (WSGI + ASGI), decorators, dynamic configuration, metrics collection, and client identification helpers.
+The test suite covers all six algorithms, all three backends (including Redis via fakeredis), middleware (WSGI + ASGI), decorators, dynamic configuration, metrics, client identification helpers, and property-based invariant tests via Hypothesis.
 
 ---
 
