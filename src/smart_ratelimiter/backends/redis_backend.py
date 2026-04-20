@@ -69,7 +69,7 @@ class RedisBackend(BaseBackend):
             if raw is None:
                 return None
             try:
-                return json.loads(raw)
+                return json.loads(cast(str, raw))
             except (json.JSONDecodeError, TypeError):
                 return raw
         except Exception as exc:
