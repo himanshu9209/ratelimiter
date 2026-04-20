@@ -10,15 +10,14 @@
 </p>
 
 <p align="center">
-  <b>Production-ready rate limiting for Python — six algorithms, three backends, one consistent API.</b><br>
-  Works as a decorator, context manager, WSGI middleware, or ASGI middleware.<br>
-  Zero required dependencies. Full type annotations. Redis optional.
+  <b>The Python rate limiter that auto-tunes itself under load.</b><br>
+  Combines a sliding window, token bucket, and real-time load sensor into one algorithm<br>
+  that tightens when traffic spikes and relaxes when it drops.<br>
+  <i>Static rate limiters guess. This one learns.</i><br><br>
+  Zero dependencies. Six algorithms. Three backends. One consistent API.
 </p>
 
 ---
-A Python rate limiter that **tunes itself automatically** based on real-time traffic.
-> Static rate limiters guess.  
-> This one learns.
 
 ## Why smart-ratelimiter?
 
@@ -31,36 +30,28 @@ Most rate-limiting libraries give you one algorithm and one backend. **smart-rat
 - **Identify clients precisely** — built-in helpers for `X-Forwarded-For`, API keys, and composite keys
 
 ---
-## The problem with rate limiting today
 
-Most rate limiters assume traffic is predictable.
+## The problem with static rate limiting
 
-It isn’t.
+Most rate limiters assume traffic is predictable. It isn’t.
 
-Static limits either:
-- Throttle too aggressively
-- Or fail under sudden spikes
+A fixed ceiling either throttles too aggressively under normal load, or fails to protect under a spike — there is no static value that is right for both situations.
 
-This is why systems either waste capacity or crash under load.
+```python
+# Static limiter: ceiling never moves regardless of traffic shape
+limiter = FixedWindowRateLimiter(backend, limit=100, window=60)
+# Traffic spike at 300 req/s → 200 requests dropped, or backend overloads
 
-## Example
+# Adaptive limiter: burst cap shrinks under load, restores when traffic drops
+limiter = AdaptiveRateLimiter(backend, limit=100, window=60, burst_multiplier=3)
+# Traffic spike at 300 req/s → burst cap tightens automatically, stability maintained
+```
 
-Traditional limiter:
-- Limit: 100 req/sec
-- Traffic spike: 300 req/sec
-→ System overloads or drops too many requests
+**Who is this for?**
 
-Adaptive limiter:
-- Starts at 100 req/sec
-- Detects spike
-- Adjusts to 180 req/sec dynamically
-→ Maintains stability while maximizing throughput
-
-## Who is this for?
-
-- Backend engineers handling burst traffic
-- API developers dealing with unpredictable load
-- System designers tired of tuning rate limits
+- Backend engineers handling burst or unpredictable traffic
+- API developers who are tired of manually tuning rate limits
+- System designers who want the limiter to absorb spikes without babysitting it
 
 ## Table of Contents
 
@@ -68,12 +59,12 @@ Adaptive limiter:
 - [Quick Start](#quick-start)
 - [Algorithms](#algorithms)
   - [Which algorithm should I use?](#which-algorithm-should-i-use)
+  - [★ Adaptive Hybrid (Flagship)](#-adaptive-hybrid-flagship)
   - [Fixed Window](#fixed-window)
   - [Sliding Window Log](#sliding-window-log)
   - [Sliding Window Counter](#sliding-window-counter)
   - [Token Bucket](#token-bucket)
   - [Leaky Bucket](#leaky-bucket)
-  - [Adaptive Hybrid](#adaptive-hybrid)
   - [Comparison table](#algorithm-comparison)
 - [Backends](#backends)
 - [Decorator API](#decorator-api)
@@ -86,6 +77,7 @@ Adaptive limiter:
 - [Observability & Metrics](#observability--metrics)
 - [RateLimitResult reference](#ratelimitresult-reference)
 - [Custom Backends](#custom-backends)
+- [Benchmarks](#benchmarks)
 - [Development](#development)
 
 ---
@@ -108,9 +100,14 @@ pip install smart-ratelimiter[dev]
 ## Quick Start
 
 ```python
-from ratelimiter import SlidingWindowRateLimiter, MemoryBackend
+from ratelimiter import AdaptiveRateLimiter, MemoryBackend
 
-limiter = SlidingWindowRateLimiter(MemoryBackend(), limit=100, window=60)
+limiter = AdaptiveRateLimiter(
+    backend=MemoryBackend(),
+    limit=100,            # hard ceiling per window
+    window=60.0,          # base window in seconds
+    burst_multiplier=3,   # allow up to 300 burst tokens when quiet
+)
 
 result = limiter.is_allowed("user:42")
 if result.allowed:
@@ -122,13 +119,13 @@ else:
 Or protect any function with one decorator:
 
 ```python
-from ratelimiter import TokenBucketRateLimiter, MemoryBackend, rate_limit
+from ratelimiter import AdaptiveRateLimiter, MemoryBackend, rate_limit
 
-limiter = TokenBucketRateLimiter(MemoryBackend(), limit=10, window=1)
+limiter = AdaptiveRateLimiter(MemoryBackend(), limit=10, window=1)
 
 @rate_limit(limiter, key_func=lambda user_id, **_: f"user:{user_id}")
 def send_email(user_id: int, to: str) -> None:
-    ...  # called at most 10 times/s per user
+    ...  # called at most 10 times/s per user, auto-throttles under load
 ```
 
 ---
@@ -138,6 +135,9 @@ def send_email(user_id: int, to: str) -> None:
 ### Which algorithm should I use?
 
 ```
+Unpredictable or bursty traffic? Multi-tenant API? Don't want to tune limits?
+    → Adaptive Hybrid  ★ (auto-tightens under load, relaxes when quiet)
+
 Need to allow short bursts?
 ├── Yes → Is memory per key a concern?
 │         ├── No  → Token Bucket  (accurate, elegant burst handling)
@@ -147,10 +147,42 @@ Need to allow short bursts?
           └── No  → Need boundary-burst protection?
                     ├── Yes → Sliding Window Log  (exact, higher memory)
                     └── No  → Fixed Window  (cheapest, simplest)
-
-High-traffic multi-tenant service with unpredictable load?
-    → Adaptive Hybrid  (auto-tightens under load, relaxes when quiet)
 ```
+
+---
+
+### ★ Adaptive Hybrid (Flagship)
+
+The core of smart-ratelimiter. Three layers work together so the limiter responds to real traffic instead of a static number you guessed upfront:
+
+| Layer | What it does |
+|---|---|
+| **Sliding window guard** | Hard ceiling at the current burst cap — prevents boundary exploitation |
+| **Token bucket** | Refills at `limit / window` tokens/s — enforces the sustained average rate |
+| **Load sensor** | Tracks request rate over `adaptive_window`; shrinks the burst cap under high load and restores it when traffic drops |
+
+Under low load, callers enjoy a generous burst allowance. Under high load, the limiter automatically becomes stricter — no manual tuning, no config change, no restart.
+
+```python
+from ratelimiter import AdaptiveRateLimiter, MemoryBackend
+
+limiter = AdaptiveRateLimiter(
+    backend=MemoryBackend(),
+    limit=100,                # hard ceiling: 100 req per window
+    window=60.0,              # base window in seconds
+    burst_multiplier=3,       # up to 300 burst tokens when quiet
+    adaptive_window=300,      # measure load over the last 5 minutes
+    high_load_threshold=0.8,  # tighten when traffic > 80% of base rate
+    low_load_threshold=0.4,   # relax when traffic < 40% of base rate
+    penalty=0.5,              # cut burst cap by 50% under high load
+)
+result = limiter.is_allowed("tenant:acme")
+print(result.metadata)
+# {'layer': 'token_bucket', 'tokens': 299.0, 'effective_burst': 300,
+#  'refill_rate': 5.0, 'sw_count': 1}
+```
+
+> **Best for:** Multi-tenant APIs, public endpoints, or any service where traffic is unpredictable and you want automatic protection without manual tuning.
 
 ---
 
@@ -236,51 +268,16 @@ result = limiter.is_allowed("user:7")
 
 ---
 
-### Adaptive Hybrid
-
-Combines sliding window accuracy with token bucket burst tolerance, plus a **load-sensing layer** that automatically tightens the burst cap under high traffic and restores it when traffic drops — with no manual tuning.
-
-```python
-from ratelimiter import AdaptiveRateLimiter, MemoryBackend
-
-limiter = AdaptiveRateLimiter(
-    backend=MemoryBackend(),
-    limit=100,                # hard ceiling: 100 req per window
-    window=60.0,              # base window in seconds
-    burst_multiplier=3,       # up to 300 burst tokens when quiet
-    adaptive_window=300,      # measure load over the last 5 minutes
-    high_load_threshold=0.8,  # tighten when traffic > 80% of base rate
-    low_load_threshold=0.4,   # relax when traffic < 40% of base rate
-    penalty=0.5,              # cut burst cap by 50% under high load
-)
-result = limiter.is_allowed("tenant:acme")
-print(result.metadata)
-# {'layer': 'token_bucket', 'tokens': 299.0, 'effective_burst': 300,
-#  'refill_rate': 5.0, 'sw_count': 1}
-```
-
-**How it works:**
-
-| Layer | Role |
-|-------|------|
-| Sliding window guard | Hard ceiling at the current burst cap; prevents boundary exploitation |
-| Token bucket | Refills at `limit / window` tokens/s; enforces sustained average rate |
-| Load sensor | Tracks request rate over `adaptive_window`; shrinks burst cap under load, restores it when quiet |
-
-> **Best for:** Multi-tenant APIs, public endpoints, or any service where traffic is unpredictable and you want automatic protection without manual tuning.
-
----
-
 ### Algorithm Comparison
 
 | Algorithm | Burst Support | Boundary Safe | Memory | State |
 |-----------|:---:|:---:|:---:|---|
+| **★ Adaptive Hybrid** | ✅ | ✅ | O(N) | sorted set + token state + load sensor |
 | Fixed Window | ❌ | ❌ | O(1) | 1 counter |
 | Sliding Window Log | ❌ | ✅ | O(N) | sorted timestamp set |
-| **Sliding Window Counter** | ❌ | ✅ | **O(1)** | 2 counters |
+| Sliding Window Counter | ❌ | ✅ | **O(1)** | 2 counters |
 | Token Bucket | ✅ | ❌ | O(1) | float + timestamp |
 | Leaky Bucket | ❌ | ✅ | O(1) | float + timestamp |
-| **Adaptive Hybrid** | ✅ | ✅ | O(N) | sorted set + token state |
 
 ---
 
