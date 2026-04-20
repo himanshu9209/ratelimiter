@@ -171,7 +171,18 @@ print(result.metadata)
 
 ## Real-world scenarios
 
-### Multi-tenant API
+### Tiered API — free vs paid users
+
+```python
+# Each tier gets its own limiter with different ceilings
+free_limiter = AdaptiveRateLimiter(MemoryBackend(), limit=60, window=60, burst_multiplier=2)
+paid_limiter = AdaptiveRateLimiter(MemoryBackend(), limit=1000, window=60, burst_multiplier=5)
+
+limiter = paid_limiter if user.is_paid else free_limiter
+result = limiter.is_allowed(f"user:{user.id}")
+```
+
+### Multi-tenant API — system stability under any tenant's spike
 
 ```python
 # One limiter for all tenants — global load sensor provides system-level protection
@@ -182,6 +193,33 @@ result = limiter.is_allowed(f"tenant:{tenant_id}")
 
 # During a spike from ANY tenant, burst caps tighten for everyone
 # -> system stays stable without per-tenant manual limits
+```
+
+### Login / brute-force protection
+
+```python
+# Tight window, no burst — attackers get no leeway
+from smart_ratelimiter import SlidingWindowRateLimiter, MemoryBackend
+
+limiter = SlidingWindowRateLimiter(MemoryBackend(), limit=5, window=60)
+
+result = limiter.is_allowed(f"login:{ip_address}")
+if not result.allowed:
+    raise HTTPException(429, f"Too many attempts. Retry in {result.retry_after:.0f}s.")
+```
+
+### Flash sale / traffic spike — adaptive auto-throttling
+
+```python
+# burst_multiplier=5 absorbs the initial spike,
+# penalty=0.7 cuts it aggressively once the load sensor fires
+limiter = AdaptiveRateLimiter(
+    MemoryBackend(),
+    limit=500, window=60,
+    burst_multiplier=5,
+    penalty=0.7,
+    adaptive_window=120,  # react faster — measure over 2 min not 5
+)
 ```
 
 ### LLM / expensive downstream calls
