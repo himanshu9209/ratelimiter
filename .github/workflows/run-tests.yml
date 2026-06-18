@@ -25,9 +25,9 @@ jobs:
         pip install pytest psutil memory-profiler
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-    # The PYTHONPATH variable forces pytest to locate your root module directory
+    # This manual mapping bypasses Hatchling and injects your directories directly into Python
     - name: Run Production Proof Tests
       env:
-        PYTHONPATH: .
+        PYTHONPATH: ${{ github.workspace }}
       run: |
         python -m pytest -v -s tests/
