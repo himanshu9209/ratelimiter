@@ -1,0 +1,35 @@
+name: Production Suite Testing
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1. Downloads your library code onto the virtual machine
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    # 2. Sets up a clean Python runtime environment
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    # 3. Installs testing dependencies and system utility packages
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest psutil memory-profiler
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        pip install -e .
+
+    # 4. Executes the dynamic load and concurrency stress testing script
+    - name: Run Production Proof Tests
+      run: |
+        python -m pytest -v -s tests/
